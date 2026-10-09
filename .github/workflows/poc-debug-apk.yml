@@ -23,8 +23,8 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
-      - name: Install Android API 37
-        run: sdkmanager "platforms;android-37"
+      - name: Install Android API 37.0
+        run: sdkmanager "platforms;android-37.0"
       - uses: gradle/actions/setup-gradle@v4
       - name: Build debug APK
         run: bash ./gradlew assembleDebug --stacktrace
