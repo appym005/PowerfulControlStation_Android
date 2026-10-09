@@ -33,6 +33,23 @@ packets with `scroll: true`, `dx`, and `dy` for two-finger touchpad
 scrolling. The new dedicated input surface consumes only touches that start
 on its own strip, leaving the existing touchpad and keyboard unmodified.
 
+## Android installation security
+
+The POC debug manifest deliberately removes unrelated sensitive permissions
+(SMS, call log, contacts, phone state, background location, broad file access,
+installation, camera, microphone, Bluetooth, and accessibility), along with
+the SMS receiver, remote-keyboard receiving IME, notification listener, and
+accessibility service. The Android keyboard **sending** implementation used
+by Remote Input is still present.
+
+This is a **remote-input-only** debug build: do not use it to test KDE Connect
+features which require the removed permissions or services.
+
+If Google Play Protect blocks an older debug APK, do not disable Play Protect
+or override its warning. Install a newly built POC APK only after checking
+the permissions and installer label. A reduced permission set may reduce
+security warnings but does not guarantee Play Protect approval.
+
 ## Scope and verification
 
 - Scope: UI strip + event handling + debug app label + CI debug APK.
