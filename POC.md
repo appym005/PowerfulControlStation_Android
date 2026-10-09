@@ -11,8 +11,10 @@ packet method, so the stock KDE Connect companion on Windows is sufficient.
    phone are on the same Wi-Fi network.
 2. Build or download the **debug** APK from GitHub Actions, and install on Android.
    The debug app is called **Powerful Control Station (POC)** and uses the
-   upstream debug application ID `org.kde.kdeconnect_tp.debug`, so it can
-   coexist with the production KDE Connect Android app.
+   unique debug application ID `com.appym005.powerfulcontrolstation.debug`, so it
+   installs alongside both regular KDE Connect (`org.kde.kdeconnect_tp`) and
+   KDE Connect's own debug build. Release builds use
+   `com.appym005.powerfulcontrolstation`.
 3. Pair the POC app with the Windows KDE Connect companion separately.
 4. Open the paired computer in the Android POC app, then open **Remote input**.
 5. Test pointer motion by moving one finger in the main touchpad area.
