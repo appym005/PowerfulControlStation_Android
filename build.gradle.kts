@@ -42,7 +42,7 @@ android {
         }
     }
     defaultConfig {
-        applicationId = "org.kde.kdeconnect_tp"
+        applicationId = "com.appym005.powerfulcontrolstation"
         minSdk = 23
         targetSdk = 37
         versionCode = 13600
