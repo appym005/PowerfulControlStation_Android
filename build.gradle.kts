@@ -36,8 +36,10 @@ kotlin {
 
 android {
     namespace = "org.kde.kdeconnect_tp"
-    compileSdk = release(37) {
-        minorApiLevel = 0
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
     }
     defaultConfig {
         applicationId = "org.kde.kdeconnect_tp"
