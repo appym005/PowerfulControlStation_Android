@@ -7,6 +7,7 @@
 package org.kde.kdeconnect.plugins.mousepad;
 
 import android.content.Context;
+import android.text.InputType;
 import android.util.AttributeSet;
 import android.util.SparseIntArray;
 import android.view.KeyEvent;
@@ -73,7 +74,16 @@ public class KeyListenerView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN;
+        // A text editor input type is required for Gboard's glide typing,
+        // suggestions and composing-text callbacks. Keep Enter available.
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+            | InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+            | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
+            | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+        outAttrs.initialSelStart = 0;
+        outAttrs.initialSelEnd = 0;
         return new KeyInputConnection(this, true);
     }
 
@@ -88,6 +98,22 @@ public class KeyListenerView extends View {
             return;
         }
         plugin.sendText(chars.toString());
+    }
+
+    /**
+     * Forward a deleted code point as a remote Backspace key. This is used
+     * when the Android IME corrects or deletes previously committed text.
+     */
+    public void sendBackspaces(int count) {
+        MousePadPlugin plugin = KdeConnect.getInstance().getDevicePlugin(deviceId, MousePadPlugin.class);
+        if (plugin == null) {
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
+            np.set("specialKey", SpecialKeysMap.get(KeyEvent.KEYCODE_DEL));
+            plugin.sendPacket(np);
+        }
     }
 
     private void sendKeyPressPacket(final NetworkPacket np) {
