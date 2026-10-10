@@ -25,6 +25,30 @@ packet method, so the stock KDE Connect companion on Windows is sufficient.
    Confirm that the target window scrolls without moving the mouse pointer.
 9. Check the existing scroll direction and sensitivity preferences and make
    sure they also affect the dedicated strip.
+10. Open the phone's Gboard from **Remote input**, then glide/swipe a few words.
+    Confirm the **final** word appears only once on the Windows PC.
+11. Verify ordinary tapping, punctuation, space, Enter, Backspace, and
+    keyboard shortcuts still work. Try suggestions/autocorrection and an emoji
+    to catch doubled characters and broken Unicode.
+12. Verify text typed through **Compose and Send** still works separately.
+
+### Swipe typing implementation
+
+The remote keyboard declares a normal Android text input type (with suggestions
+and autocorrection enabled). Its `BaseInputConnection` keeps a shadow
+`Editable` so keyboards such as Gboard can call `setComposingText`, replace
+composing regions, and use `commitText` normally. Only finalized text
+is transmitted; corrections are represented as Backspace operations followed by
+the replacement text, using the existing KDE Connect mousepad protocol.
+
+The shadow buffer mirrors the text *typed in the current keyboard session*;
+it is not a full synchronization of the remote Windows text editor. Editing
+arbitrary older remote text via Gboard's cursor/selection gestures is outside
+this proof-of-concept and needs separate cursor-state handling.
+
+The GitHub Actions debug build runs the focused `CommittedTextDeltaTest`
+regression tests before uploading the APK. End-to-end Gboard swipe behavior
+still requires manual testing on a real phone.
 
 ## Why this implementation
 
