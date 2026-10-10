@@ -80,7 +80,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     private fun flushCommittedText() {
         if (batchDepth != 0) return
 
-        val localText = editable
+        val localText = editable ?: return
         if (getComposingSpanStart(localText) >= 0 || getComposingSpanEnd(localText) >= 0) {
             return // Gboard is still deciding the word (swipe/prediction).
         }
