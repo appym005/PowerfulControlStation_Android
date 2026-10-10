@@ -35,20 +35,25 @@ on its own strip, leaving the existing touchpad and keyboard unmodified.
 
 ## Android installation security
 
-The POC debug manifest deliberately removes unrelated sensitive permissions
-(SMS, call log, contacts, phone state, background location, broad file access,
-installation, camera, microphone, Bluetooth, and accessibility), along with
-the SMS receiver, remote-keyboard receiving IME, notification listener, and
-accessibility service. The Android keyboard **sending** implementation used
-by Remote Input is still present.
+The POC debug manifest now inherits **all original KDE Connect permissions and
+components** from the main manifest, including Bluetooth, SMS/phone/contacts,
+storage, location, notification listener, Accessibility, and remote-keyboard IME.
+The earlier debug-only restrictions (25 permission removals and five removed
+components) were explicitly reverted. This is a development build: grant only
+the permissions you choose to use, and be aware it declares sensitive access.
 
-This is a **remote-input-only** debug build: do not use it to test KDE Connect
-features which require the removed permissions or services.
+For an authorized developer-owned device, install using Android Debug Bridge
+(ADB) instead of a browser/file manager:
 
-If Google Play Protect blocks an older debug APK, do not disable Play Protect
-or override its warning. Install a newly built POC APK only after checking
-the permissions and installer label. A reduced permission set may reduce
-security warnings but does not guarantee Play Protect approval.
+```powershell
+adb devices
+adb install -r "kdeconnect-android-debug.apk"
+```
+
+The debug package remains `com.appym005.powerfulcontrolstation.debug`. ADB
+installation **does not disable Play Protect** and is not a guarantee that
+Android will permit an APK or grant runtime/special-access permissions.
+Do not disable Play Protect to install this app.
 
 ## Scope and verification
 
