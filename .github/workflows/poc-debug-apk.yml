@@ -26,6 +26,8 @@ jobs:
       - name: Install Android API 37.0
         run: sdkmanager "platforms;android-37.0"
       - uses: gradle/actions/setup-gradle@v4
+      - name: Test swipe keyboard text delta
+        run: bash ./gradlew testDebugUnitTest --tests "org.kde.kdeconnect.plugins.mousepad.CommittedTextDeltaTest" --stacktrace
       - name: Build debug APK
         run: bash ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
