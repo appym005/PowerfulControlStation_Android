@@ -73,3 +73,36 @@ internal fun safeImeRemoteBackspaceCount(
     afterLength: Int,
     hasBufferedText: Boolean
 ): Int = if (!hasBufferedText && beforeLength == 1 && afterLength == 0) 1 else 0
+
+
+/** Guard remote corrections against replaying or deleting arbitrary historical text. */
+internal fun boundedWordCorrection(previous: String, current: String): CommittedTextDelta {
+    if (previous.length > 64 || current.length > 256) return CommittedTextDelta(0, "")
+    val delta = committedTextDelta(previous, current)
+    return if (delta.backspaces <= 64) delta else CommittedTextDelta(0, "")
+}
+
+/** Gboard generally commits glide words as a single multi-character segment. */
+internal fun isSwipeCandidate(text: String): Boolean =
+    text.length in 2..64 && text.all { it.isLetter() || it == '\'' || it == '-' }
+
+/** A backspace immediately after a glide commit should remove that whole word. */
+internal fun swipeDeleteLength(
+    mirrored: String,
+    requestedBefore: Int,
+    requestedAfter: Int,
+    recentSwipe: Boolean,
+    withinWindow: Boolean
+): Int = if (
+    recentSwipe && withinWindow && requestedBefore == 1 && requestedAfter == 0 &&
+    mirrored.length in 2..64 && mirrored.trimEnd().all { it.isLetter() || it == '\'' || it == '-' }
+) mirrored.length else 0
+
+/** Keep only the final word, or clear local context after an Enter. */
+internal fun shadowTrimIndex(text: String): Int {
+    val lastNewline = maxOf(text.lastIndexOf('\n'), text.lastIndexOf('\r'))
+    if (lastNewline >= 0) return lastNewline + 1
+    val end = text.indexOfLast { !it.isWhitespace() }
+    if (end < 0) return 0
+    return text.lastIndexOf(' ', end).let { if (it >= 0) it + 1 else 0 }
+}
