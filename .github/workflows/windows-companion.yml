@@ -1,0 +1,42 @@
+name: Build Windows Companion
+
+on:
+  push:
+    branches:
+      - feature/windows-cursor-companion-20261011
+    paths:
+      - 'tools/windows/PowerfulControlStation/**'
+      - '.github/workflows/windows-companion.yml'
+  pull_request:
+    paths:
+      - 'tools/windows/PowerfulControlStation/**'
+      - '.github/workflows/windows-companion.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish self-contained Windows executable
+        shell: pwsh
+        run: |
+          dotnet publish tools/windows/PowerfulControlStation/PowerfulControlStation.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugSymbols=false -p:DebugType=None -o publish
+      - name: Validate Win32 input layout
+        shell: pwsh
+        run: .\publish\PowerfulControlStation.exe --self-test
+      - name: Upload portable executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerfulControlStation-Windows-x64
+          path: publish/PowerfulControlStation.exe
+          if-no-files-found: error
