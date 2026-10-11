@@ -126,7 +126,8 @@ internal fun recentSwipeSuggestion(
     incoming: String,
     recentSwipe: Boolean,
     withinWindow: Boolean,
-    imeSelectedWord: Boolean
+    imeSelectedWord: Boolean,
+    newWordComposing: Boolean = false
 ): String? {
     if (!recentSwipe || !withinWindow || mirrored.isEmpty()) return null
     val existing = mirrored.trimEnd(' ')
@@ -135,11 +136,17 @@ internal fun recentSwipeSuggestion(
         return null
     }
     if (!imeSelectedWord) {
-        // When Gboard commits a *new* glide word it generally includes or
-        // establishes a separator. Do not reinterpret an auto-spaced glide.
-        if (incoming.endsWith(' ')) return null
+        // A brand new Gboard composition must not overwrite the preceding
+        // Windows word even if the two spellings are nearly identical.
+        if (newWordComposing) return null
+        val distance = shortWordEditDistance(existing, suggestion)
         val maximumEdits = maxOf(2, existing.length / 3)
-        if (shortWordEditDistance(existing, suggestion) > maximumEdits) return null
+        if (distance > maximumEdits) return null
+        // Gboard sometimes auto-inserts the following space in the SAME
+        // commitText call as a tapped suggestion. Previously we rejected
+        // every such correction and silently appended the candidate.
+        // Require a stronger spelling match without explicit selection.
+        if (incoming.endsWith(' ') && distance > 2) return null
     }
     // Retain Gboard's auto-space, if the original word had one, otherwise the
     // next plain keystroke would end up glued to the corrected word.
