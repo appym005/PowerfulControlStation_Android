@@ -61,15 +61,13 @@ public class KeyListenerView extends View {
      * rather than forwarding it as unmodified text to Windows.
      */
     public boolean sendCtrlShortcutIfArmed(CharSequence input) {
-        if (!oneShotCtrl || input == null || input.length() != 1) return false;
-        char key = input.charAt(0);
-        if (!((key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z'))) {
-            return false;
-        }
+        if (!oneShotCtrl) return false;
+        final String key = RemoteModifierKey.ctrlLetter(input);
+        if (key == null) return false;
         MousePadPlugin plugin = KdeConnect.getInstance().getDevicePlugin(deviceId, MousePadPlugin.class);
         if (plugin == null) return false;
         final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
-        np.set("key", String.valueOf(Character.toLowerCase(key)));
+        np.set("key", key);
         np.set("ctrl", true);
         if (consumeOneShotShift()) np.set("shift", true);
         consumeOneShotCtrl();
