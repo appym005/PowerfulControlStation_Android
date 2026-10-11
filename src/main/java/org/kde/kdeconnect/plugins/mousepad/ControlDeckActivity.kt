@@ -93,6 +93,7 @@ private enum class SensitivityControl { TRACKPAD, SCROLL }
 
 private val defaultButtons = listOf(
     DeckButton("ctrl", "Ctrl", 1),
+    DeckButton("shift", "Shift", 1),
     DeckButton("task_view", "Win + Tab", 1),
     DeckButton("terminal", "Terminal", 2),
     DeckButton("switch", "Alt + Tab", 2)
@@ -120,6 +121,7 @@ class ControlDeckActivity : AppCompatActivity() {
         val preferences = getSharedPreferences("control_deck", MODE_PRIVATE)
         val storageKey = "buttons_$deviceId"
         val keepAwakeKey = "keep_screen_on"
+        val collapsedKey = "panel_collapsed_$deviceId"
         val trackpadKey = "trackpad_sensitivity_$deviceId"
         val scrollKey = "scroll_sensitivity_$deviceId"
         val defaultScroll = PreferenceManager.getDefaultSharedPreferences(this)
@@ -137,6 +139,8 @@ class ControlDeckActivity : AppCompatActivity() {
                 var editing by remember { mutableStateOf(false) }
                 var selectedId by remember { mutableStateOf<String?>(null) }
                 var ctrlArmed by remember { mutableStateOf(false) }
+                var shiftArmed by remember { mutableStateOf(false) }
+                var panelCollapsed by remember(deviceId) { mutableStateOf(preferences.getBoolean(collapsedKey, false)) }
                 var keepAwake by remember { mutableStateOf(preferences.getBoolean(keepAwakeKey, true)) }
                 var trackpadSensitivity by remember(deviceId) {
                     mutableStateOf(preferences.getInt(trackpadKey, 100).coerceIn(25, 300))
@@ -160,23 +164,29 @@ class ControlDeckActivity : AppCompatActivity() {
                 }
 
                 fun runButton(button: DeckButton) {
-                    val withCtrl = ctrlArmed
                     if (button.id == "ctrl") {
                         ctrlArmed = !ctrlArmed
                         return
                     }
+                    if (button.id == "shift") {
+                        shiftArmed = !shiftArmed
+                        keyboardView?.setOneShotShift(shiftArmed)
+                        return
+                    }
+                    val withCtrl = ctrlArmed
+                    val withShift = shiftArmed
                     ctrlArmed = false
+                    shiftArmed = false
+                    keyboardView?.setOneShotShift(false)
                     if (!plugin.isKeyboardEnabled) {
                         Toast.makeText(this, R.string.mousepad_keyboard_input_not_supported, Toast.LENGTH_SHORT).show()
                         return
                     }
                     val tab = KeyListenerView.SpecialKeysMap.get(KeyEvent.KEYCODE_TAB)
                     when (button.id) {
-                        "task_view" -> plugin.sendDeckShortcut(specialKey = tab, superKey = true, ctrl = withCtrl)
-                        "switch" -> plugin.sendDeckShortcut(specialKey = tab, alt = true, ctrl = withCtrl)
+                        "task_view" -> plugin.sendDeckShortcut(specialKey = tab, superKey = true, ctrl = withCtrl, shift = withShift)
+                        "switch" -> plugin.sendDeckShortcut(specialKey = tab, alt = true, ctrl = withCtrl, shift = withShift)
                         "terminal" -> {
-                            // Win+R, then 'wt' (Windows Terminal), then Enter.
-                            // No Windows-side custom command needs to be configured.
                             lifecycleScope.launch {
                                 plugin.sendDeckShortcut(key = "r", superKey = true)
                                 delay(350)
@@ -191,7 +201,9 @@ class ControlDeckActivity : AppCompatActivity() {
                 }
 
                 val context = LocalContext.current
-                val trackpad = remember(plugin) { ControlDeckTrackpad(context, plugin) }
+                val trackpad = remember(plugin) {
+                    ControlDeckTrackpad(context, plugin) { keyboardView?.invalidateRemoteContext() }
+                }
                 val scroll = remember(plugin) { ControlDeckScroll(context, plugin) }
                 SideEffect {
                     trackpad.sensitivityPercent = trackpadSensitivity
@@ -210,17 +222,57 @@ class ControlDeckActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize().padding(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
+                    if (panelCollapsed) {
+                        Column(
+                            modifier = Modifier.width(40.dp).fillMaxHeight()
+                                .background(Color(0xFF262626), RoundedCornerShape(14.dp)),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    panelCollapsed = false
+                                    preferences.edit().putBoolean(collapsedKey, false).apply()
+                                }
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.control_deck_expand),
+                                    tint = Color.White,
+                                    contentDescription = "Expand button panel"
+                                )
+                            }
+                        }
+                    } else {
                     Column(
                         modifier = Modifier.weight(0.215f).fillMaxHeight(),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = "CONTROL DECK",
-                            color = Color(0xFFCFCFCF),
-                            fontSize = 11.sp,
-                            letterSpacing = 1.3.sp,
-                            modifier = Modifier.padding(start = 8.dp, top = 2.dp)
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "CONTROL DECK",
+                                color = Color(0xFFCFCFCF),
+                                fontSize = 11.sp,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f).padding(start = 2.dp)
+                            )
+                            IconButton(
+                                onClick = {
+                                    panelCollapsed = true
+                                    preferences.edit().putBoolean(collapsedKey, true).apply()
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.control_deck_collapse),
+                                    tint = Color.White,
+                                    contentDescription = "Collapse button panel",
+                                    modifier = Modifier.size(21.dp)
+                                )
+                            }
+                        }
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(2),
                             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -282,7 +334,7 @@ class ControlDeckActivity : AppCompatActivity() {
                                         }
                                         .then(dragModifier)
                                         .background(
-                                            if (button.id == "ctrl" && ctrlArmed && !editing) Color(0xFF6A6A6A)
+                                            if (((button.id == "ctrl" && ctrlArmed) || (button.id == "shift" && shiftArmed)) && !editing) Color(0xFF6A6A6A)
                                             else Color(0xFF2A2A2A),
                                             RoundedCornerShape(24.dp)
                                         )
@@ -376,6 +428,8 @@ class ControlDeckActivity : AppCompatActivity() {
                                     selectedId = null
                                     draggingId = null
                                     ctrlArmed = false
+                                    shiftArmed = false
+                                    keyboardView?.setOneShotShift(false)
                                 },
                                 modifier = Modifier
                                     .size(46.dp)
@@ -389,9 +443,10 @@ class ControlDeckActivity : AppCompatActivity() {
                             }
                         }
                     }
+                    } // end expanded sidebar
 
                     Box(
-                        modifier = Modifier.weight(0.785f).fillMaxHeight()
+                        modifier = Modifier.weight(1f).fillMaxHeight()
                             .background(Color(0xFF272727), RoundedCornerShape(28.dp))
                             .pointerInteropFilter { trackpad.onTouch(it) },
                         contentAlignment = Alignment.Center
@@ -420,6 +475,7 @@ class ControlDeckActivity : AppCompatActivity() {
                     factory = { androidContext ->
                         KeyListenerView(androidContext, null).apply {
                             setDeviceId(deviceId)
+                            setOnShiftConsumed { shiftArmed = false }
                             keyboardView = this
                         }
                     },
@@ -438,6 +494,7 @@ class ControlDeckActivity : AppCompatActivity() {
                             val input = keyboardView
                             if (input != null) {
                                 val manager = getSystemService(InputMethodManager::class.java)
+                                input.invalidateRemoteContext()
                                 input.requestFocus()
                                 input.post {
                                     manager?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
@@ -577,6 +634,7 @@ private fun SensitivityPopup(
 
 private fun deckIcon(id: String): Int = when (id) {
     "ctrl" -> R.drawable.control_deck_ctrl
+    "shift" -> R.drawable.control_deck_shift
     "task_view" -> R.drawable.control_deck_windows
     "terminal" -> R.drawable.control_deck_terminal
     "switch" -> R.drawable.control_deck_switch
@@ -683,8 +741,25 @@ private fun loadDeck(json: String?): List<DeckButton> {
                 ?: return@mapNotNull null
             default.copy(span = record.optInt("span", default.span).coerceIn(1, 2))
         }
-        if (saved.map { it.id }.toSet() == defaultButtons.map { it.id }.toSet()) saved
-        else defaultButtons
+        // Keep the user's saved widths and order when we introduce new buttons.
+        // Older decks won't contain Shift: insert it beside Ctrl without resetting.
+        val currentIds = defaultButtons.map { it.id }.toSet()
+        if (saved.isEmpty() || saved.any { it.id !in currentIds } ||
+            saved.map { it.id }.toSet().size != saved.size
+        ) {
+            defaultButtons
+        } else {
+            val updated = saved.toMutableList()
+            for (newButton in defaultButtons) {
+                if (updated.none { it.id == newButton.id }) {
+                    val insertAt = if (newButton.id == "shift") {
+                        (updated.indexOfFirst { it.id == "ctrl" } + 1).coerceAtLeast(0)
+                    } else updated.size
+                    updated.add(insertAt, newButton)
+                }
+            }
+            updated
+        }
     } catch (_: Exception) {
         defaultButtons
     }
