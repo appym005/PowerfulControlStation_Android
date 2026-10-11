@@ -117,7 +117,21 @@ private fun PluginButtons(
     onButtonClick: (Plugin.PluginUiButton) -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        val buttonIter = buttons.iterator()
+        // Put Control Deck in the first slot of the row immediately after
+        // Remote Input, keeping the existing remote and Run Command tiles in place.
+        val remoteName = stringResource(R.string.open_mousepad)
+        val deckName = stringResource(R.string.control_deck)
+        val sortedButtons = buttons.toMutableList()
+        val deck = sortedButtons.firstOrNull { it.name == deckName }
+        if (deck != null) {
+            sortedButtons.remove(deck)
+            val remoteIndex = sortedButtons.indexOfFirst { it.name == remoteName }
+            val rowStart = if (remoteIndex >= 0) {
+                ((remoteIndex / numColumns) + 1) * numColumns
+            } else sortedButtons.size
+            sortedButtons.add(rowStart.coerceAtMost(sortedButtons.size), deck)
+        }
+        val buttonIter = sortedButtons.iterator()
 
         while (buttonIter.hasNext()) {
             Row(
