@@ -172,3 +172,41 @@ private fun shortWordEditDistance(a: String, b: String): Int {
     }
     return distances[a.length][b.length]
 }
+
+
+/**
+ * The recent word including a possible Gboard auto-space, while preserving
+ * its *absolute* index in the Android Editable for subsequent IME selections.
+ * Prior words remain in the session buffer; only this range can be corrected.
+ */
+internal data class RecentSessionWord(val start: Int, val end: Int, val text: String)
+
+internal fun recentSessionWord(session: String): RecentSessionWord? {
+    if (session.isEmpty()) return null
+    var end = session.length
+    while (end > 0 && session[end - 1] == ' ') end--
+    if (end == 0) return null
+    var start = end
+    while (start > 0 && (
+        session[start - 1].isLetter() ||
+        session[start - 1] == '\'' ||
+        session[start - 1] == '-'
+    )) start--
+    if (start == end || end - start > 64) return null
+    if (start > 0 && !session[start - 1].isWhitespace()) return null
+    if (session.length - end > 1) return null
+    return RecentSessionWord(start, session.length, session.substring(start))
+}
+
+/**
+ * Allows new text to append freely, but forbids Gboard from sending deletions
+ * extending into previously committed words on Windows. Unlike the old
+ * boundedWordCorrection(), the Android session prefix remains untouched.
+ */
+internal fun safeSessionTextDelta(previous: String, current: String): CommittedTextDelta? {
+    val delta = committedTextDelta(previous, current)
+    if (delta.backspaces == 0) return delta
+    val latestWord = recentSessionWord(previous) ?: return null
+    val allowedCodePoints = latestWord.text.codePointCount(0, latestWord.text.length)
+    return if (delta.backspaces <= allowedCodePoints) delta else null
+}

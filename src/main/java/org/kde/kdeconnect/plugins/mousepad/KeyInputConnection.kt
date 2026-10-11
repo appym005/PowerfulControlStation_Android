@@ -13,15 +13,16 @@ import android.view.inputmethod.BaseInputConnection
 /**
  * Short, bounded IME mirror for Gboard word corrections.
  *
- * We cannot know the Windows field's entire text or cursor. We mirror only
- * the most recent word (max 64 UTF-16 units) for a short correction window.
- * As soon as the user touches the remote trackpad or opens a new keyboard
- * session, discard this mirror so old text cannot be replayed in a new field.
+ * Windows does not expose its text field/cursor to us. Keep Android's whole
+ * in-session Editable intact so Gboard selection/composition offsets stay
+ * stable over multiple words. Limit remote deletions to the current word,
+ * and discard all history when the trackpad changes the remote focus.
  */
 internal class KeyInputConnection(private val view: KeyListenerView, fullEditor: Boolean) :
     BaseInputConnection(view, fullEditor) {
 
     private var batchDepth = 0
+    // Entire already-forwarded Android session buffer; never trim its prefix.
     private var sentShadow = ""
     private var lastEditAt = 0L
     private var lastWasSwipe = false
@@ -51,26 +52,26 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
         expirePriorWordIfNeeded()
         val input = text.toString()
+        val recentWord = recentSessionWord(sentShadow)
         val corrected = recentSwipeSuggestion(
-            mirrored = sentShadow,
+            mirrored = recentWord?.text.orEmpty(),
             incoming = input,
             recentSwipe = lastWasSwipe,
-            withinWindow = SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs,
+            withinWindow = lastEditAt != 0L &&
+                SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs,
             imeSelectedWord = imeSelectedRecentWord
         )
         imeSelectedRecentWord = false
 
-        if (corrected != null) {
+        if (corrected != null && recentWord != null) {
             val buffer = editable ?: return false
-            // Gboard sometimes appends a tapped suggestion because it holds a
-            // selection index from before we shortened the local IME buffer.
-            // Explicitly replace the *local recent word*; flushCommittedText()
-            // then sends the matching Backspaces and corrected suffix to Windows.
-            // Never select or edit text outside this bounded local mirror.
+            // Preserve all preceding Android text/selection indices; select ONLY
+            // the current word for replacement. Clearing/trimming earlier text
+            // used to desynchronize Gboard after the first successful correction.
             if (getComposingSpanStart(buffer) >= 0 || getComposingSpanEnd(buffer) >= 0) {
                 super.finishComposingText()
             }
-            Selection.setSelection(buffer, 0, buffer.length)
+            Selection.setSelection(buffer, recentWord.start, buffer.length)
             val accepted = super.commitText(corrected, newCursorPosition)
             if (accepted) {
                 lastWasSwipe = true
@@ -95,14 +96,13 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     private fun selectionTargetsRecentWord(start: Int, end: Int): Boolean {
         if (!lastWasSwipe || start == end) return false
         if (SystemClock.uptimeMillis() - lastEditAt > correctionWindowMs) return false
-        val mirroredWordLength = sentShadow.trimEnd(' ').length
-        if (mirroredWordLength !in 2..64) return false
+        val word = recentSessionWord(sentShadow) ?: return false
         val lo = minOf(start, end)
         val hi = maxOf(start, end)
-        // Gboard can retain absolute indices from before we trimmed earlier
-        // committed text out of the local mirror.
-        return (lo < mirroredWordLength && hi > 0) ||
-            (lo >= mirroredWordLength && hi - lo in 2..(mirroredWordLength + 1))
+        // Selection indices must target the actual last word, not an earlier
+        // piece of text in the same session. No fabricated/stale offset mapping.
+        return lo >= word.start && lo < word.end &&
+            hi <= word.end && hi > word.start
     }
 
     override fun setComposingRegion(start: Int, end: Int): Boolean {
@@ -129,7 +129,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         expirePriorWordIfNeeded()
         val localBefore = editable?.toString().orEmpty()
         val deleteLength = swipeDeleteLength(
-            localBefore, beforeLength, afterLength,
+            recentSessionWord(localBefore)?.text.orEmpty(), beforeLength, afterLength,
             lastWasSwipe, SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs
         )
         val effectiveBefore = if (deleteLength > 0) deleteLength else beforeLength
@@ -148,7 +148,13 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
         expirePriorWordIfNeeded()
         val localBefore = editable?.toString().orEmpty()
-        val result = super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+        val recentWord = recentSessionWord(localBefore)
+        val swipeLength = swipeDeleteLength(
+            recentWord?.text.orEmpty(), beforeLength, afterLength,
+            lastWasSwipe, SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs
+        )
+        val effectiveBefore = if (swipeLength > 0) swipeLength else beforeLength
+        val result = super.deleteSurroundingTextInCodePoints(effectiveBefore, afterLength)
         if (result) {
             if (localBefore.isEmpty() && safeImeRemoteBackspaceCount(beforeLength, afterLength, false) > 0) {
                 view.sendBackspaces(1)
@@ -162,10 +168,10 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
 
     override fun sendKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_UP && event.keyCode == KeyEvent.KEYCODE_DEL) {
-            val word = editable?.toString().orEmpty()
+            val word = recentSessionWord(editable?.toString().orEmpty())
             val now = SystemClock.uptimeMillis()
-            if (lastWasSwipe && now - lastEditAt <= correctionWindowMs && word.isNotEmpty()) {
-                val length = word.length
+            if (lastWasSwipe && now - lastEditAt <= correctionWindowMs && word != null) {
+                val length = word.text.length
                 super.deleteSurroundingText(length, 0)
                 flushCommittedText()
                 lastWasSwipe = false
@@ -184,7 +190,10 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     private fun expirePriorWordIfNeeded() {
         val now = SystemClock.uptimeMillis()
         if (lastEditAt != 0L && now - lastEditAt > correctionWindowMs) {
-            invalidateRemoteContext()
+            // Expire only suggestion eligibility. Clearing the Editable here
+            // invalidates Gboard's position indices for the rest of the session.
+            lastWasSwipe = false
+            imeSelectedRecentWord = false
         }
     }
 
@@ -195,9 +204,10 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         val current = localText.toString()
         if (current == sentShadow) return
 
-        // Do not allow an IME to delete beyond the last short, locally mirrored
-        // word. In particular, never replay an unrelated paragraph.
-        val delta = boundedWordCorrection(sentShadow, current)
+        // Older text can remain for Gboard's offsets, but it cannot be deleted
+        // remotely. Return without sending anything if the IME tries to edit
+        // farther back than the latest word.
+        val delta = safeSessionTextDelta(sentShadow, current) ?: return
         if (delta.backspaces > 0) view.sendBackspaces(delta.backspaces)
         for (action in committedTextActions(delta.inserted)) {
             when (action) {
@@ -208,16 +218,8 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         sentShadow = current
         lastEditAt = SystemClock.uptimeMillis()
 
-        // Restrict the buffer to the newest word (plus any trailing space).
-        // Keep the latest completed swipe available for suggestion replacement.
-        val trimAt = shadowTrimIndex(current)
-        if (trimAt > 0) {
-            localText.delete(0, trimAt)
-            sentShadow = localText.toString()
-            lastWasSwipe = isSwipeCandidate(sentShadow.trimEnd())
-        }
-        if (sentShadow.length > 64) {
-            invalidateRemoteContext()
-        }
+        // Intentionally do NOT trim the Android Editable. Android's IME owns
+        // the cursor offsets within that buffer until this keyboard is closed.
+        // Remote correction safety is enforced by safeSessionTextDelta().
     }
 }

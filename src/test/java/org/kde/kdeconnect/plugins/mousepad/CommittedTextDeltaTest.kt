@@ -178,4 +178,58 @@ class CommittedTextDeltaTest {
         )
     }
 
+
+    @Test
+    fun repeatedSuggestionsInSingleSessionRetainCorrectAbsoluteOffsets() {
+        // Gboard has already sent a first swipe followed by a tap on "hello".
+        val first = "helo "
+        val firstSpan = recentSessionWord(first)!!
+        assertEquals(0, firstSpan.start)
+        assertEquals("hello ", recentSwipeSuggestion(firstSpan.text, "hello", true, true, false))
+        assertEquals(CommittedTextDelta(2, "lo "), safeSessionTextDelta(first, "hello "))
+
+        // Gboard continues composing without closing/reopening the keyboard.
+        val second = "hello wrod "
+        val secondSpan = recentSessionWord(second)!!
+        assertEquals(6, secondSpan.start)
+        assertEquals("wrod ", secondSpan.text)
+        assertEquals("word ", recentSwipeSuggestion(secondSpan.text, "word", true, true, false))
+        assertEquals(CommittedTextDelta(3, "ord "), safeSessionTextDelta(second, "hello word "))
+
+        // Third correction in the SAME IME session.
+        val third = "hello word teh "
+        val thirdSpan = recentSessionWord(third)!!
+        assertEquals(11, thirdSpan.start)
+        assertEquals("the ", recentSwipeSuggestion(thirdSpan.text, "the", true, true, false))
+        assertEquals(CommittedTextDelta(3, "he "), safeSessionTextDelta(third, "hello word the "))
+    }
+
+    @Test
+    fun sessionPrefixCannotBeDeletedByStaleGboardSelection() {
+        assertEquals(null, safeSessionTextDelta("hello world ", "hello "))
+        assertEquals(null, safeSessionTextDelta("first second third", "first "))
+        assertEquals(null, safeSessionTextDelta("abc def", "xyz def"))
+    }
+
+    @Test
+    fun appendingAfterManyWordsStillForwardsText() {
+        assertEquals(
+            CommittedTextDelta(0, "next "),
+            safeSessionTextDelta("hello word ", "hello word next ")
+        )
+        assertEquals(
+            CommittedTextDelta(0, "more"),
+            safeSessionTextDelta("hello word next ", "hello word next more")
+        )
+    }
+
+    @Test
+    fun fullSwipeBackspaceTargetsOnlyLatestSessionWord() {
+        val current = "hello word swipe "
+        val span = recentSessionWord(current)!!
+        assertEquals("swipe ", span.text)
+        assertEquals(6, swipeDeleteLength(span.text, 1, 0, true, true))
+        assertEquals(CommittedTextDelta(6, ""), safeSessionTextDelta(current, "hello word "))
+    }
+
 }
