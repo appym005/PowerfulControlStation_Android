@@ -191,6 +191,7 @@ class MousePadPlugin : Plugin() {
         specialKey: Int? = null,
         ctrl: Boolean = false,
         alt: Boolean = false,
+        shift: Boolean = false,
         superKey: Boolean = false
     ) {
         val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
@@ -198,6 +199,7 @@ class MousePadPlugin : Plugin() {
         if (specialKey != null) np["specialKey"] = specialKey
         if (ctrl) np["ctrl"] = true
         if (alt) np["alt"] = true
+        if (shift) np["shift"] = true
         if (superKey) np["super"] = true
         sendPacket(np)
     }
