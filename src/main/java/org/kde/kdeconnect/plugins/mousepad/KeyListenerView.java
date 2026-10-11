@@ -260,7 +260,16 @@ public class KeyListenerView extends View {
         if (event.isShiftPressed() || consumeOneShotShift()) {
             np.set("shift", true);
         }
-        if (consumeOneShotCtrl()) {
+        final boolean isModifierKey =
+            keyCode == KeyEvent.KEYCODE_SHIFT_LEFT ||
+            keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_CTRL_LEFT ||
+            keyCode == KeyEvent.KEYCODE_CTRL_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_ALT_LEFT ||
+            keyCode == KeyEvent.KEYCODE_ALT_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_META_LEFT ||
+            keyCode == KeyEvent.KEYCODE_META_RIGHT;
+        if (!isModifierKey && consumeOneShotCtrl()) {
             np.set("ctrl", true);
             modifier = true;
         }
