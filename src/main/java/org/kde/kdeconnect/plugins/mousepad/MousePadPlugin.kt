@@ -55,7 +55,15 @@ class MousePadPlugin : Plugin() {
                 listOf(mouseAndKeyboardInput, tvInput)
             }
         } else {
-            listOf(mouseAndKeyboardInput)
+            val deck = PluginUiButton(
+                context.getString(R.string.control_deck),
+                R.drawable.touchpad_plugin_action_24dp
+            ) { parentActivity ->
+                val intent = Intent(parentActivity, ControlDeckActivity::class.java)
+                intent.putExtra(ControlDeckActivity.EXTRA_DEVICE_ID, device.deviceId)
+                parentActivity.startActivity(intent)
+            }
+            listOf(mouseAndKeyboardInput, deck)
         }
     }
 
