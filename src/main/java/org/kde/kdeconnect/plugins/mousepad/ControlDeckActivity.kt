@@ -40,12 +40,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.ViewCarousel
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -61,13 +55,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -317,7 +311,7 @@ class ControlDeckActivity : AppCompatActivity() {
                                     )
                             ) {
                                 Icon(
-                                    imageVector = if (keepAwake) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    painter = painterResource(if (keepAwake) R.drawable.control_deck_awake else R.drawable.control_deck_sleep),
                                     tint = if (keepAwake) Color.White else Color.LightGray,
                                     contentDescription = if (keepAwake) "Keep screen on: enabled" else "Keep screen on: disabled",
                                     modifier = Modifier.size(22.dp)
@@ -377,12 +371,12 @@ class ControlDeckActivity : AppCompatActivity() {
     }
 }
 
-private fun deckIcon(id: String): ImageVector = when (id) {
-    "ctrl" -> Icons.Default.Keyboard
-    "task_view" -> Icons.Default.ViewCarousel
-    "terminal" -> Icons.Default.Terminal
-    "switch" -> Icons.Default.SwapHoriz
-    else -> Icons.Default.Keyboard
+private fun deckIcon(id: String): Int = when (id) {
+    "ctrl" -> R.drawable.control_deck_ctrl
+    "task_view" -> R.drawable.control_deck_windows
+    "terminal" -> R.drawable.control_deck_terminal
+    "switch" -> R.drawable.control_deck_switch
+    else -> R.drawable.control_deck_ctrl
 }
 
 @Composable
@@ -394,7 +388,7 @@ private fun DeckButtonFace(button: DeckButton, selected: Boolean) {
             modifier = Modifier.padding(horizontal = if (selected) 9.dp else 4.dp)
         ) {
             Icon(
-                imageVector = deckIcon(button.id),
+                painter = painterResource(deckIcon(button.id)),
                 tint = Color.White,
                 contentDescription = null,
                 modifier = Modifier.size(23.dp)
@@ -416,7 +410,7 @@ private fun DeckButtonFace(button: DeckButton, selected: Boolean) {
             modifier = Modifier.padding(horizontal = if (selected) 25.dp else 12.dp)
         ) {
             Icon(
-                imageVector = deckIcon(button.id),
+                painter = painterResource(deckIcon(button.id)),
                 tint = Color.White,
                 contentDescription = null,
                 modifier = Modifier.size(25.dp)
