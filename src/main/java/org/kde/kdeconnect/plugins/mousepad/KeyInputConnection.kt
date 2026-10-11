@@ -69,7 +69,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             return true
         }
         // Some IMEs issue a duplicate commit after the composing callback.
-        if (input == shortcutEcho && now - shortcutEchoAt in 0..300L) {
+        if (input == shortcutEcho && now - shortcutEchoAt in 0L..300L) {
             shortcutEcho = null
             return true
         }
