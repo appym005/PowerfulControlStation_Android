@@ -83,8 +83,12 @@ internal fun boundedWordCorrection(previous: String, current: String): Committed
 }
 
 /** Gboard generally commits glide words as a single multi-character segment. */
-internal fun isSwipeCandidate(text: String): Boolean =
-    text.length in 2..64 && text.all { it.isLetter() || it == '\'' || it == '-' }
+internal fun isSwipeCandidate(text: String): Boolean {
+    val word = text.trimEnd(' ')
+    return text.length in 2..65 && word.length in 2..64 &&
+        word.all { it.isLetter() || it == '\'' || it == '-' } &&
+        text.substring(word.length).all { it == ' ' }
+}
 
 /** A backspace immediately after a glide commit should remove that whole word. */
 internal fun swipeDeleteLength(
