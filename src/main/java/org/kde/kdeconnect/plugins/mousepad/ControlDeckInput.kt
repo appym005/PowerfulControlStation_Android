@@ -18,7 +18,8 @@ import kotlin.math.pow
 /** Independent gestures for the deck's trackpad: tap, double-tap and two-finger tap. */
 internal class ControlDeckTrackpad(
     context: Context,
-    private val plugin: MousePadPlugin
+    private val plugin: MousePadPlugin,
+    private val onPointerInteraction: () -> Unit = {}
 ) {
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private var lastX = 0f
@@ -61,6 +62,8 @@ internal class ControlDeckTrackpad(
     fun onTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // The remote Windows caret may have changed since the last Gboard word.
+                onPointerInteraction()
                 lastX = event.x
                 lastY = event.y
                 firstDown = SystemClock.uptimeMillis()
