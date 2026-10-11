@@ -29,12 +29,18 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     // Some Gboard correction taps identify the previous word by explicitly
     // selecting it or setting a composing region around it.
     private var imeSelectedRecentWord = false
-    private val correctionWindowMs = 12000L
+    private var composingWasGlide = false
+    private var newWordComposing = false
+    private var shortcutEcho: String? = null
+    private var shortcutEchoAt = 0L
+    private val correctionWindowMs = 20000L
 
     fun invalidateRemoteContext() {
         sentShadow = ""
         lastWasSwipe = false
         imeSelectedRecentWord = false
+        composingWasGlide = false
+        newWordComposing = false
         editable?.clear()
     }
 
@@ -49,7 +55,51 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         return batchDepth > 0
     }
 
+    private fun interceptControlShortcut(text: CharSequence): Boolean {
+        val input = text.toString()
+        val now = SystemClock.uptimeMillis()
+        if (view.sendCtrlShortcutIfArmed(input)) {
+            // Ctrl shortcuts act on Windows without inserting local text. A new
+            // IME connection is needed so subsequent text doesn't inherit the
+            // old editor's selection (e.g. after Ctrl+A or Ctrl+V).
+            shortcutEcho = input
+            shortcutEchoAt = now
+            invalidateRemoteContext()
+            view.restartImeAfterShortcut()
+            return true
+        }
+        // Some IMEs issue a duplicate commit after the composing callback.
+        if (input == shortcutEcho && now - shortcutEchoAt in 0..300L) {
+            shortcutEcho = null
+            return true
+        }
+        shortcutEcho = null
+        return false
+    }
+
+    override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
+        if (interceptControlShortcut(text)) return true
+        val buffer = editable
+        if (buffer != null) {
+            val hadComposition = getComposingSpanStart(buffer) >= 0
+            if (!hadComposition && isSwipeCandidate(text.toString())) {
+                // Glide input can finish via finishComposingText(), without
+                // ever calling commitText() for the completed swipe.
+                composingWasGlide = true
+            }
+            val previousWord = recentSessionWord(sentShadow)
+            val selectionStart = Selection.getSelectionStart(buffer)
+            if (previousWord != null && selectionStart >= previousWord.end &&
+                !imeSelectedRecentWord
+            ) {
+                newWordComposing = true
+            }
+        }
+        return super.setComposingText(text, newCursorPosition)
+    }
+
     override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
+        if (interceptControlShortcut(text)) return true
         expirePriorWordIfNeeded()
         val input = text.toString()
         val recentWord = recentSessionWord(sentShadow)
@@ -59,7 +109,8 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             recentSwipe = lastWasSwipe,
             withinWindow = lastEditAt != 0L &&
                 SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs,
-            imeSelectedWord = imeSelectedRecentWord
+            imeSelectedWord = imeSelectedRecentWord,
+            newWordComposing = newWordComposing
         )
         imeSelectedRecentWord = false
 
@@ -78,6 +129,8 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
                 flushCommittedText()
             }
             imeSelectedRecentWord = false
+            composingWasGlide = false
+            newWordComposing = false
             return accepted
         }
 
@@ -85,11 +138,13 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         if (committed) {
             // Glide words arrive as multi-character commits; ordinary typing
             // generally arrives one character at a time.
-            if (isSwipeCandidate(input)) lastWasSwipe = true
-            else if (text.any { it.isWhitespace() } && sentShadow.isEmpty()) lastWasSwipe = false
+            if (isSwipeCandidate(input) || composingWasGlide) lastWasSwipe = true
+            else if (input.any { it.isWhitespace() } && sentShadow.isEmpty()) lastWasSwipe = false
             flushCommittedText()
         }
         imeSelectedRecentWord = false
+        composingWasGlide = false
+        newWordComposing = false
         return committed
     }
 
@@ -120,8 +175,16 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     }
 
     override fun finishComposingText(): Boolean {
+        val glideCompleted = composingWasGlide
         val result = super.finishComposingText()
-        if (result) flushCommittedText()
+        if (result) {
+            flushCommittedText()
+            if (glideCompleted && recentSessionWord(sentShadow) != null) {
+                lastWasSwipe = true
+            }
+        }
+        composingWasGlide = false
+        newWordComposing = false
         return result
     }
 
@@ -140,7 +203,8 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             } else {
                 flushCommittedText()
             }
-            lastWasSwipe = false
+            if (!imeSelectedRecentWord) lastWasSwipe = false
+            newWordComposing = false
         }
         return result
     }
@@ -161,7 +225,8 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             } else {
                 flushCommittedText()
             }
-            lastWasSwipe = false
+            if (!imeSelectedRecentWord) lastWasSwipe = false
+            newWordComposing = false
         }
         return result
     }
@@ -207,7 +272,24 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         // Older text can remain for Gboard's offsets, but it cannot be deleted
         // remotely. Return without sending anything if the IME tries to edit
         // farther back than the latest word.
-        val delta = safeSessionTextDelta(sentShadow, current) ?: return
+        val delta = safeSessionTextDelta(sentShadow, current)
+        if (delta == null) {
+            // Without restoring local state, every subsequent delta would be
+            // compared to a stale Windows shadow and Gboard could stop working.
+            // Reject dangerous backwards edits locally and keep the host intact.
+            localText.replace(0, localText.length, sentShadow)
+            Selection.setSelection(localText, localText.length)
+            lastWasSwipe = false
+            imeSelectedRecentWord = false
+            return
+        }
+        if (delta.backspaces == 0 && delta.inserted.length == 1 &&
+            view.sendCtrlShortcutIfArmed(delta.inserted)
+        ) {
+            invalidateRemoteContext()
+            view.restartImeAfterShortcut()
+            return
+        }
         if (delta.backspaces > 0) view.sendBackspaces(delta.backspaces)
         for (action in committedTextActions(delta.inserted)) {
             when (action) {
