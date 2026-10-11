@@ -83,6 +83,21 @@ public class KeyListenerView extends View {
         });
     }
 
+    /**
+     * A custom text editor must report its current caret/composition range to
+     * the IME after commits or selection changes. Without updateSelection,
+     * Gboard can keep stale positions after suggestion replacement and stall.
+     * The InputConnection only calls this after any active batch is finished.
+     */
+    public void reportImeSelection(int start, int end, int composingStart, int composingEnd) {
+        if (!hasFocus() || !isAttachedToWindow()) return;
+        final InputMethodManager manager = (InputMethodManager)
+            getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (manager != null) {
+            manager.updateSelection(this, start, end, composingStart, composingEnd);
+        }
+    }
+
     private boolean consumeOneShotShift() {
         if (!oneShotShift) return false;
         oneShotShift = false;
