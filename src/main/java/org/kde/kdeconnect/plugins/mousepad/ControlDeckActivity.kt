@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
 import android.view.KeyEvent
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -16,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +40,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.ViewCarousel
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -51,18 +61,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -87,6 +97,7 @@ class ControlDeckActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -101,6 +112,8 @@ class ControlDeckActivity : AppCompatActivity() {
             }
         val preferences = getSharedPreferences("control_deck", MODE_PRIVATE)
         val storageKey = "buttons_$deviceId"
+        val keepAwakeKey = "keep_screen_on"
+        setScreenAwake(preferences.getBoolean(keepAwakeKey, true))
 
         setContent {
             KdeTheme(this) {
@@ -112,6 +125,7 @@ class ControlDeckActivity : AppCompatActivity() {
                 var editing by remember { mutableStateOf(false) }
                 var selectedId by remember { mutableStateOf<String?>(null) }
                 var ctrlArmed by remember { mutableStateOf(false) }
+                var keepAwake by remember { mutableStateOf(preferences.getBoolean(keepAwakeKey, true)) }
                 val bounds = remember { mutableStateMapOf<String, Rect>() }
                 var draggingId by remember { mutableStateOf<String?>(null) }
                 var dragVector by remember { mutableStateOf(Offset.Zero) }
@@ -161,11 +175,14 @@ class ControlDeckActivity : AppCompatActivity() {
                 val scroll = remember(plugin) { ControlDeckScroll(context, plugin) }
 
                 Row(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF161616)).padding(8.dp),
+                    modifier = Modifier.fillMaxSize()
+                        .background(Color(0xFF161616))
+                        .safeDrawingPadding() // Includes landscape display cutouts and rounded corners.
+                        .padding(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     Column(
-                        modifier = Modifier.weight(0.43f).fillMaxHeight(),
+                        modifier = Modifier.weight(0.215f).fillMaxHeight(),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
@@ -250,35 +267,31 @@ class ControlDeckActivity : AppCompatActivity() {
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = button.label,
-                                        color = Color.White,
-                                        textAlign = TextAlign.Center,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = if (button.span == 1) 14.sp else 17.sp,
-                                        maxLines = 2,
-                                        modifier = Modifier.padding(horizontal = if (isSelected) 30.dp else 10.dp)
-                                    )
+                                    DeckButtonFace(button = button, selected = isSelected)
                                     if (isSelected) {
-                                        SpanControl(
-                                            text = "−",
-                                            enabled = button.span != 1,
-                                            modifier = Modifier.align(Alignment.CenterStart).padding(start = 3.dp)
-                                        ) {
+                                        // Just like resize handles in a visual editor: white pill grips
+                                        // centered on the left and right edges of the selected outline.
+                                        // Drag outward to grow to 2 cells; inward to shrink to 1.
+                                        // A tap also toggles size for convenient one-handed editing.
+                                        EdgeResizeHandle(
+                                            leftEdge = true,
+                                            span = button.span,
+                                            modifier = Modifier.align(Alignment.CenterStart)
+                                        ) { newSpan ->
                                             val at = buttons.indexOfFirst { it.id == button.id }
-                                            if (at >= 0) {
-                                                buttons[at] = button.copy(span = 1)
+                                            if (at >= 0 && buttons[at].span != newSpan) {
+                                                buttons[at] = buttons[at].copy(span = newSpan)
                                                 persist()
                                             }
                                         }
-                                        SpanControl(
-                                            text = "+",
-                                            enabled = button.span != 2,
-                                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 3.dp)
-                                        ) {
+                                        EdgeResizeHandle(
+                                            leftEdge = false,
+                                            span = button.span,
+                                            modifier = Modifier.align(Alignment.CenterEnd)
+                                        ) { newSpan ->
                                             val at = buttons.indexOfFirst { it.id == button.id }
-                                            if (at >= 0) {
-                                                buttons[at] = button.copy(span = 2)
+                                            if (at >= 0 && buttons[at].span != newSpan) {
+                                                buttons[at] = buttons[at].copy(span = newSpan)
                                                 persist()
                                             }
                                         }
@@ -286,7 +299,31 @@ class ControlDeckActivity : AppCompatActivity() {
                                 }
                             }
                         }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    keepAwake = !keepAwake
+                                    preferences.edit().putBoolean(keepAwakeKey, keepAwake).apply()
+                                    setScreenAwake(keepAwake)
+                                },
+                                modifier = Modifier.size(42.dp)
+                                    .background(
+                                        if (keepAwake) Color(0xFF585858) else Color(0xFF282828),
+                                        CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = if (keepAwake) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    tint = if (keepAwake) Color.White else Color.LightGray,
+                                    contentDescription = if (keepAwake) "Keep screen on: enabled" else "Keep screen on: disabled",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Box(modifier = Modifier.width(7.dp))
                             IconButton(
                                 onClick = {
                                     editing = !editing
@@ -308,7 +345,7 @@ class ControlDeckActivity : AppCompatActivity() {
                     }
 
                     Box(
-                        modifier = Modifier.weight(0.57f).fillMaxHeight()
+                        modifier = Modifier.weight(0.785f).fillMaxHeight()
                             .background(Color(0xFF272727), RoundedCornerShape(28.dp))
                             .pointerInteropFilter { trackpad.onTouch(it) },
                         contentAlignment = Alignment.Center
@@ -333,18 +370,108 @@ class ControlDeckActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun setScreenAwake(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+}
+
+private fun deckIcon(id: String): ImageVector = when (id) {
+    "ctrl" -> Icons.Default.Keyboard
+    "task_view" -> Icons.Default.ViewCarousel
+    "terminal" -> Icons.Default.Terminal
+    "switch" -> Icons.Default.SwapHoriz
+    else -> Icons.Default.Keyboard
 }
 
 @Composable
-private fun SpanControl(text: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun DeckButtonFace(button: DeckButton, selected: Boolean) {
+    if (button.span == 1) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = if (selected) 9.dp else 4.dp)
+        ) {
+            Icon(
+                imageVector = deckIcon(button.id),
+                tint = Color.White,
+                contentDescription = null,
+                modifier = Modifier.size(23.dp)
+            )
+            Text(
+                text = button.label,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.sp,
+                lineHeight = 12.sp,
+                maxLines = 2
+            )
+        }
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            modifier = Modifier.padding(horizontal = if (selected) 25.dp else 12.dp)
+        ) {
+            Icon(
+                imageVector = deckIcon(button.id),
+                tint = Color.White,
+                contentDescription = null,
+                modifier = Modifier.size(25.dp)
+            )
+            Text(
+                text = button.label,
+                color = Color.White,
+                fontWeight = FontWeight.Medium,
+                fontSize = 15.sp,
+                maxLines = 2
+            )
+        }
+    }
+}
+
+@Composable
+private fun EdgeResizeHandle(
+    leftEdge: Boolean,
+    span: Int,
+    modifier: Modifier = Modifier,
+    onSpanChange: (Int) -> Unit
+) {
+    var totalDrag = 0f
     Box(
-        modifier = modifier.size(28.dp)
-            .background(if (enabled) Color(0xFF505050) else Color(0xFF252525), CircleShape)
-            .border(1.dp, if (enabled) Color.White else Color.DarkGray, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+        modifier = modifier
+            .offset(x = if (leftEdge) (-7).dp else 7.dp)
+            .width(30.dp)
+            .height(46.dp)
+            .pointerInput(leftEdge, span) {
+                detectHorizontalDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onHorizontalDrag = { change, amount ->
+                        change.consume()
+                        totalDrag += amount
+                    },
+                    onDragEnd = {
+                        val threshold = 17.dp.toPx()
+                        val outward = if (leftEdge) totalDrag < -threshold else totalDrag > threshold
+                        val inward = if (leftEdge) totalDrag > threshold else totalDrag < -threshold
+                        if (outward) onSpanChange(2)
+                        else if (inward) onSpanChange(1)
+                        totalDrag = 0f
+                    },
+                    onDragCancel = { totalDrag = 0f }
+                )
+            }
+            .clickable { onSpanChange(if (span == 1) 2 else 1) },
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = if (enabled) Color.White else Color.Gray, fontSize = 19.sp)
+        Box(
+            modifier = Modifier
+                .width(9.dp)
+                .height(29.dp)
+                .background(Color.White, RoundedCornerShape(6.dp))
+        )
     }
 }
 
