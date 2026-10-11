@@ -126,7 +126,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         imeSelectedRecentWord = false
 
         if (corrected != null && recentWord != null) {
-            val buffer = editable ?: return false
+            val buffer = editable ?: return super.commitText(text, newCursorPosition)
             // Preserve all preceding Android text/selection indices; select ONLY
             // the current word for replacement. Clearing/trimming earlier text
             // used to desynchronize Gboard after the first successful correction.
@@ -284,14 +284,13 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         // Older text can remain for Gboard's offsets, but it cannot be deleted
         // remotely. Return without sending anything if the IME tries to edit
         // farther back than the latest word.
-        val delta = safeSessionTextDelta(sentShadow, current)
-        if (delta == null) {
-            // IME changed more than the latest remote word. Don't send unsafe
-            // Backspaces to Windows, but ALWAYS accept the new Android baseline
-            // without rewriting live composing text/selection. Otherwise Gboard
-            // can get stuck repeating the rejected edit forever.
-            Log.w(logTag, "Resync after out-of-range edit; oldLength=" +
-                sentShadow.length + " newLength=" + current.length)
+        val decision = decideRemoteImeEdit(sentShadow, current, remoteSafeFrom)
+        if (decision is RemoteImeDecision.Rebase) {
+            // Keep Android's editable and selection untouched. Only update the
+            // Windows bookkeeping baseline. In particular, never "roll back"
+            // a Gboard correction by calling Editable.replace() here.
+            Log.w(logTag, "Resync after unsafe IME edit; beforeLength=" +
+                sentShadow.length + " afterLength=" + current.length)
             sentShadow = current
             remoteSafeFrom = current.length
             lastWasSwipe = false
@@ -301,20 +300,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             lastEditAt = 0L
             return
         }
-        if (delta.backspaces > 0) {
-            val safeWord = recentSessionWord(sentShadow)
-            if (safeWord == null || safeWord.start < remoteSafeFrom) {
-                Log.w(logTag, "Ignored deletion touching unsynchronized remote history")
-                sentShadow = current
-                remoteSafeFrom = current.length
-                lastWasSwipe = false
-                imeSelectedRecentWord = false
-                composingWasGlide = false
-                newWordComposing = false
-                lastEditAt = 0L
-                return
-            }
-        }
+        val delta = (decision as RemoteImeDecision.Forward).delta
         if (delta.backspaces == 0 && delta.inserted.length == 1 &&
             view.sendCtrlShortcutIfArmed(delta.inserted)
         ) {
