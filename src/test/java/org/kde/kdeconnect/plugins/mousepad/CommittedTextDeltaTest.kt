@@ -276,7 +276,7 @@ class CommittedTextDeltaTest {
         val nextSwipe = "$corrected1" + "wrold "
         val nextCorrection = "$corrected1" + "world "
         assertEquals(
-            CommittedTextDelta(4, "orld "),
+            CommittedTextDelta(5, "orld "),
             safeSessionTextDelta(nextSwipe, nextCorrection)
         )
         val thirdSwipe = "$nextCorrection" + "teh "
