@@ -166,6 +166,7 @@ class ControlDeckActivity : AppCompatActivity() {
                 fun runButton(button: DeckButton) {
                     if (button.id == "ctrl") {
                         ctrlArmed = !ctrlArmed
+                        keyboardView?.setOneShotCtrl(ctrlArmed)
                         return
                     }
                     if (button.id == "shift") {
@@ -178,6 +179,7 @@ class ControlDeckActivity : AppCompatActivity() {
                     ctrlArmed = false
                     shiftArmed = false
                     keyboardView?.setOneShotShift(false)
+                    keyboardView?.setOneShotCtrl(false)
                     if (!plugin.isKeyboardEnabled) {
                         Toast.makeText(this, R.string.mousepad_keyboard_input_not_supported, Toast.LENGTH_SHORT).show()
                         return
@@ -430,6 +432,7 @@ class ControlDeckActivity : AppCompatActivity() {
                                     ctrlArmed = false
                                     shiftArmed = false
                                     keyboardView?.setOneShotShift(false)
+                                    keyboardView?.setOneShotCtrl(false)
                                 },
                                 modifier = Modifier
                                     .size(46.dp)
@@ -476,6 +479,9 @@ class ControlDeckActivity : AppCompatActivity() {
                         KeyListenerView(androidContext, null).apply {
                             setDeviceId(deviceId)
                             setOnShiftConsumed { shiftArmed = false }
+                            setOnCtrlConsumed { ctrlArmed = false }
+                            setOneShotCtrl(ctrlArmed)
+                            setOneShotShift(shiftArmed)
                             keyboardView = this
                         }
                     },
