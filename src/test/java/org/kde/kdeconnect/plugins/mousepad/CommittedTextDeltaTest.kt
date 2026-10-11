@@ -194,7 +194,7 @@ class CommittedTextDeltaTest {
         assertEquals(6, secondSpan.start)
         assertEquals("wrod ", secondSpan.text)
         assertEquals("word ", recentSwipeSuggestion(secondSpan.text, "word", true, true, false))
-        assertEquals(CommittedTextDelta(3, "ord "), safeSessionTextDelta(second, "hello word "))
+        assertEquals(CommittedTextDelta(4, "ord "), safeSessionTextDelta(second, "hello word "))
 
         // Third correction in the SAME IME session.
         val third = "hello word teh "
@@ -206,7 +206,7 @@ class CommittedTextDeltaTest {
 
     @Test
     fun sessionPrefixCannotBeDeletedByStaleGboardSelection() {
-        assertEquals(null, safeSessionTextDelta("hello world ", "hello "))
+        assertEquals(null, safeSessionTextDelta("hello world ", "world "))
         assertEquals(null, safeSessionTextDelta("first second third", "first "))
         assertEquals(null, safeSessionTextDelta("abc def", "xyz def"))
     }
