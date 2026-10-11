@@ -61,8 +61,21 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
 
     override fun endBatchEdit(): Boolean {
         if (batchDepth > 0) batchDepth--
-        if (batchDepth == 0) flushCommittedText()
+        if (batchDepth == 0) {
+            flushCommittedText()
+            reportSelectionToIme()
+        }
         return batchDepth > 0
+    }
+
+    private fun reportSelectionToIme() {
+        if (batchDepth > 0) return
+        val buffer = editable ?: return
+        val selStart = Selection.getSelectionStart(buffer).coerceIn(0, buffer.length)
+        val selEnd = Selection.getSelectionEnd(buffer).coerceIn(0, buffer.length)
+        view.reportImeSelection(
+            selStart, selEnd, getComposingSpanStart(buffer), getComposingSpanEnd(buffer)
+        )
     }
 
     private fun interceptControlShortcut(text: CharSequence): Boolean {
@@ -105,7 +118,9 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
                 newWordComposing = true
             }
         }
-        return super.setComposingText(text, newCursorPosition)
+        val result = super.setComposingText(text, newCursorPosition)
+        if (result) reportSelectionToIme()
+        return result
     }
 
     override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
@@ -144,7 +159,10 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
                 // don't replace stale indices in the editor.
                 Log.d(logTag, "Suggestion delegated: composing word changed")
                 val accepted = super.commitText(text, newCursorPosition)
-                if (accepted) flushCommittedText()
+                if (accepted) {
+                    flushCommittedText()
+                    reportSelectionToIme()
+                }
                 lastWasSwipe = false
                 composingWasGlide = false
                 newWordComposing = false
@@ -161,6 +179,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             if (accepted) {
                 lastWasSwipe = true
                 flushCommittedText()
+                reportSelectionToIme()
             }
             imeSelectedRecentWord = false
             composingWasGlide = false
@@ -175,6 +194,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             if (isSwipeCandidate(input) || composingWasGlide) lastWasSwipe = true
             else if (input.any { it.isWhitespace() } && sentShadow.isEmpty()) lastWasSwipe = false
             flushCommittedText()
+            reportSelectionToIme()
         }
         imeSelectedRecentWord = false
         composingWasGlide = false
@@ -206,7 +226,9 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         if (selectionTargetsRecentWord(start, end)) {
             imeSelectedRecentWord = true
         }
-        return super.setSelection(start, end)
+        val result = super.setSelection(start, end)
+        if (result) reportSelectionToIme()
+        return result
     }
 
     override fun finishComposingText(): Boolean {
@@ -220,6 +242,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         }
         composingWasGlide = false
         newWordComposing = false
+        if (result) reportSelectionToIme()
         return result
     }
 
@@ -240,6 +263,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             }
             if (!imeSelectedRecentWord) lastWasSwipe = false
             newWordComposing = false
+            reportSelectionToIme()
         }
         return result
     }
@@ -262,6 +286,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             }
             if (!imeSelectedRecentWord) lastWasSwipe = false
             newWordComposing = false
+            reportSelectionToIme()
         }
         return result
     }
