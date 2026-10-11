@@ -1,27 +1,33 @@
 # Powerful Control Station — experimental Windows cursor wake helper
-# Run in an ordinary PowerShell window while using Samsung Second Screen:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\windows\KeepCursorVisible.ps1
-# Stop with Ctrl+C. No admin rights or permanently installed services required.
+# This script targets Windows PowerShell 5.1 and PowerShell 7.
 #
-# Problem: Windows may hide the mouse cursor after touch input on an attached
-# Samsung tablet. KDE Connect Windows moves it via SetCursorPos(), not through
-# actual MOUSEEVENTF_MOVE events. Hover keeps working but no pointer is drawn.
-# When the cursor position changes, emit a tiny +1 / -1 synthetic mouse move
-# using SendInput. Windows should then treat the last pointer modality as mouse.
+# Run from the directory containing this file:
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\KeepCursorVisible.ps1"
 #
-# This is experimental, not a confirmed cure on all Windows/Samsung systems.
+# Stop with Ctrl+C. No admin rights or persistent policy changes required.
+# Purpose: wake a Windows mouse pointer hidden after touching Samsung Second
+# Screen when KDE Connect continues moving the pointer via SetCursorPos().
+# This remains experimental until verified on the affected laptop.
 
-Add-Type -TypeDefinition @'
+$ErrorActionPreference = "Stop"
+
+# Use Windows PowerShell-compatible C# syntax. Return a packed 64-bit position,
+# avoiding PowerShell's nested struct type lookup altogether.
+$cursorWakeSource = @'
 using System;
 using System.Runtime.InteropServices;
 
-public static class PowerfulControlStationCursorWake
+public static class PowerfulControlStationCursorWakeV2
 {
     [StructLayout(LayoutKind.Sequential)]
-    public struct POINT { public int X; public int Y; }
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct MOUSEINPUT
+    private struct MOUSEINPUT
     {
         public int dx;
         public int dy;
@@ -32,7 +38,7 @@ public static class PowerfulControlStationCursorWake
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct INPUT
+    private struct INPUT
     {
         public uint type;
         public MOUSEINPUT mi;
@@ -44,41 +50,82 @@ public static class PowerfulControlStationCursorWake
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint count, INPUT[] inputs, int size);
 
-    public static bool TryGetCursorPosition(out POINT point) => GetCursorPos(out point);
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
 
-    public static bool Wake()
+    // No allocated custom structs need to cross the PowerShell/C# boundary.
+    public static long ReadPosition()
     {
+        POINT point;
+        if (!GetCursorPos(out point))
+            return Int64.MinValue;
+
+        return ((long)point.X << 32) | (uint)point.Y;
+    }
+
+    public static bool WakeMousePointer(long packedPosition)
+    {
+        // Avoid a one-pixel drift when the cursor is exactly on the right edge
+        // of the combined virtual display.
+        int x = (int)(packedPosition >> 32);
+        int virtualLeft = GetSystemMetrics(76); // SM_XVIRTUALSCREEN
+        int virtualWidth = GetSystemMetrics(78); // SM_CXVIRTUALSCREEN
+        int step = (virtualWidth > 1 && x >= virtualLeft + virtualWidth - 1) ? -1 : 1;
+
         const uint INPUT_MOUSE = 0;
-        const uint MOUSEEVENTF_MOVE = 0x0001;
-        INPUT forward = new INPUT
-        {
-            type = INPUT_MOUSE,
-            mi = new MOUSEINPUT { dx = 1, dy = 0, dwFlags = MOUSEEVENTF_MOVE }
-        };
-        INPUT backward = new INPUT
-        {
-            type = INPUT_MOUSE,
-            mi = new MOUSEINPUT { dx = -1, dy = 0, dwFlags = MOUSEEVENTF_MOVE }
-        };
-        return SendInput(2, new INPUT[] { forward, backward }, Marshal.SizeOf(typeof(INPUT))) == 2;
+        const uint MOUSEEVENTF_MOVE = 1;
+
+        INPUT forward = new INPUT();
+        forward.type = INPUT_MOUSE;
+        forward.mi = new MOUSEINPUT();
+        forward.mi.dx = step;
+        forward.mi.dwFlags = MOUSEEVENTF_MOVE;
+
+        INPUT backward = new INPUT();
+        backward.type = INPUT_MOUSE;
+        backward.mi = new MOUSEINPUT();
+        backward.mi.dx = -step;
+        backward.mi.dwFlags = MOUSEEVENTF_MOVE;
+
+        INPUT[] inputs = new INPUT[] { forward, backward };
+        return SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT))) == 2;
     }
 }
 '@
 
-Write-Host "Cursor wake helper running. Touch Samsung Second Screen, then move using Control Deck. Press Ctrl+C to stop."
-$prior = New-Object PowerfulControlStationCursorWake+POINT
-$valid = [PowerfulControlStationCursorWake]::TryGetCursorPosition([ref]$prior)
+try {
+    if (-not ("PowerfulControlStationCursorWakeV2" -as [type])) {
+        Add-Type -TypeDefinition $cursorWakeSource -ErrorAction Stop
+    }
+} catch {
+    Write-Error ("Cannot initialize cursor helper: " + $_.Exception.Message)
+    exit 1
+}
+
+$cursorWake = [PowerfulControlStationCursorWakeV2]
+$prior = $cursorWake::ReadPosition()
+$valid = $prior -ne [long]::MinValue
+$warned = $false
+
+Write-Host "Cursor wake helper running. Touch Samsung Second Screen, then move the mouse using Control Deck. Ctrl+C stops."
 
 while ($true) {
     Start-Sleep -Milliseconds 40
-    $current = New-Object PowerfulControlStationCursorWake+POINT
-    if (-not [PowerfulControlStationCursorWake]::TryGetCursorPosition([ref]$current)) {
+    $current = $cursorWake::ReadPosition()
+
+    if ($current -eq [long]::MinValue) {
         $valid = $false
         continue
     }
-    if ($valid -and ($current.X -ne $prior.X -or $current.Y -ne $prior.Y)) {
-        [void][PowerfulControlStationCursorWake]::Wake()
+
+    if ($valid -and $current -ne $prior) {
+        $injected = $cursorWake::WakeMousePointer($current)
+        if (-not $injected -and -not $warned) {
+            Write-Warning "Windows blocked mouse-event injection. If a target application runs elevated, try testing in a normal app first."
+            $warned = $true
+        }
     }
+
     $prior = $current
     $valid = $true
 }
