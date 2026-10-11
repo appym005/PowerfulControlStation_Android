@@ -29,6 +29,10 @@ internal class ControlDeckTrackpad(
     private var doubleTapPending = false
     private var holdingLeft = false
     private var secondTapDistance = 0f
+    // The Windows KDE Connect receiver truncates mouse deltas to whole pixels.
+    // Keep subpixel movement between touch events so slow dragging still works.
+    private var remainingX = 0f
+    private var remainingY = 0f
 
     /** 100 is the existing deck pointer speed; changes take effect immediately. */
     var sensitivityPercent: Int = 100
@@ -63,6 +67,8 @@ internal class ControlDeckTrackpad(
                 maxDistance = 0f
                 hadTwoFingers = false
                 secondTapDistance = 0f
+                remainingX = 0f
+                remainingY = 0f
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 hadTwoFingers = true
@@ -83,7 +89,15 @@ internal class ControlDeckTrackpad(
                     }
                     if (dx != 0f || dy != 0f) {
                         val factor = 1.2f * (sensitivityPercent.coerceIn(25, 300) / 100f)
-                        plugin.sendMouseDelta(dx * factor, dy * factor)
+                        remainingX += dx * factor
+                        remainingY += dy * factor
+                        val pixelsX = remainingX.toInt()
+                        val pixelsY = remainingY.toInt()
+                        remainingX -= pixelsX
+                        remainingY -= pixelsY
+                        if (pixelsX != 0 || pixelsY != 0) {
+                            plugin.sendMouseDelta(pixelsX.toFloat(), pixelsY.toFloat())
+                        }
                     }
                 }
             }
@@ -103,11 +117,15 @@ internal class ControlDeckTrackpad(
                     if (secondTapDistance <= slop) plugin.sendDoubleClick()
                 }
                 doubleTapPending = false
+                remainingX = 0f
+                remainingY = 0f
             }
             MotionEvent.ACTION_CANCEL -> {
                 if (holdingLeft) plugin.sendSingleRelease()
                 holdingLeft = false
                 doubleTapPending = false
+                remainingX = 0f
+                remainingY = 0f
             }
         }
         // GestureDetector runs for delayed single-tap and long-press recognition.

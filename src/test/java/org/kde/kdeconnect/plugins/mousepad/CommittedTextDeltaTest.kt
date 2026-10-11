@@ -80,4 +80,17 @@ class CommittedTextDeltaTest {
         )
         assertEquals(emptyList<RemoteTextAction>(), committedTextActions(""))
     }
+    @Test
+    fun remoteBackspaceIsAllowedOnlyForSingleDirectDeletion() {
+        assertEquals(1, safeImeRemoteBackspaceCount(1, 0, false))
+        assertEquals(0, safeImeRemoteBackspaceCount(1, 0, true))
+        assertEquals(0, safeImeRemoteBackspaceCount(1, 1, false))
+    }
+
+    @Test
+    fun staleImeSelectionsCannotDeleteRemoteParagraphs() {
+        assertEquals(0, safeImeRemoteBackspaceCount(50, 0, false))
+        assertEquals(0, safeImeRemoteBackspaceCount(2000, 0, false))
+        assertEquals(0, safeImeRemoteBackspaceCount(0, 150, false))
+    }
 }

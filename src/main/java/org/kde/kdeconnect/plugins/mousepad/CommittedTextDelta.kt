@@ -61,3 +61,15 @@ internal fun committedTextActions(inserted: String): List<RemoteTextAction> {
     if (start < inserted.length) actions.add(RemoteTextAction.Text(inserted.substring(start)))
     return actions
 }
+
+
+/**
+ * Allow only an explicit single Backspace from an IME with no unsent local text.
+ * A large deleteSurroundingText range is commonly caused by Gboard's outdated
+ * editor selection and MUST NOT erase a separate Windows field.
+ */
+internal fun safeImeRemoteBackspaceCount(
+    beforeLength: Int,
+    afterLength: Int,
+    hasBufferedText: Boolean
+): Int = if (!hasBufferedText && beforeLength == 1 && afterLength == 0) 1 else 0
