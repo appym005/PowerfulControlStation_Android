@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.KeyEvent
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -20,6 +21,8 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -42,12 +45,16 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Slider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,13 +68,16 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.preference.PreferenceManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -75,8 +85,11 @@ import org.json.JSONObject
 import org.kde.kdeconnect.KdeConnect
 import org.kde.kdeconnect_tp.R
 import org.kde.kdeconnect.ui.compose.KdeTheme
+import kotlin.math.roundToInt
 
 private data class DeckButton(val id: String, val label: String, val span: Int)
+
+private enum class SensitivityControl { TRACKPAD, SCROLL }
 
 private val defaultButtons = listOf(
     DeckButton("ctrl", "Ctrl", 1),
@@ -107,6 +120,11 @@ class ControlDeckActivity : AppCompatActivity() {
         val preferences = getSharedPreferences("control_deck", MODE_PRIVATE)
         val storageKey = "buttons_$deviceId"
         val keepAwakeKey = "keep_screen_on"
+        val trackpadKey = "trackpad_sensitivity_$deviceId"
+        val scrollKey = "scroll_sensitivity_$deviceId"
+        val defaultScroll = PreferenceManager.getDefaultSharedPreferences(this)
+            .getInt(getString(R.string.mousepad_scroll_sensitivity), 100)
+            .coerceIn(25, 300)
         setScreenAwake(preferences.getBoolean(keepAwakeKey, true))
 
         setContent {
@@ -120,6 +138,14 @@ class ControlDeckActivity : AppCompatActivity() {
                 var selectedId by remember { mutableStateOf<String?>(null) }
                 var ctrlArmed by remember { mutableStateOf(false) }
                 var keepAwake by remember { mutableStateOf(preferences.getBoolean(keepAwakeKey, true)) }
+                var trackpadSensitivity by remember(deviceId) {
+                    mutableStateOf(preferences.getInt(trackpadKey, 100).coerceIn(25, 300))
+                }
+                var scrollSensitivity by remember(deviceId) {
+                    mutableStateOf(preferences.getInt(scrollKey, defaultScroll).coerceIn(25, 300))
+                }
+                var sensitivityPopup by remember { mutableStateOf<SensitivityControl?>(null) }
+                var keyboardView by remember { mutableStateOf<KeyListenerView?>(null) }
                 val bounds = remember { mutableStateMapOf<String, Rect>() }
                 var draggingId by remember { mutableStateOf<String?>(null) }
                 var dragVector by remember { mutableStateOf(Offset.Zero) }
@@ -167,12 +193,21 @@ class ControlDeckActivity : AppCompatActivity() {
                 val context = LocalContext.current
                 val trackpad = remember(plugin) { ControlDeckTrackpad(context, plugin) }
                 val scroll = remember(plugin) { ControlDeckScroll(context, plugin) }
+                SideEffect {
+                    trackpad.sensitivityPercent = trackpadSensitivity
+                    scroll.sensitivityPercent = scrollSensitivity
+                }
+                val imeHeight = with(LocalDensity.current) {
+                    WindowInsets.ime.getBottom(this).toDp()
+                }
 
-                Row(
+                Box(
                     modifier = Modifier.fillMaxSize()
                         .background(Color(0xFF161616))
-                        .safeDrawingPadding() // Includes landscape display cutouts and rounded corners.
-                        .padding(8.dp),
+                        .safeDrawingPadding() // Includes cutouts and rounded landscape corners.
+                ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     Column(
@@ -295,6 +330,23 @@ class ControlDeckActivity : AppCompatActivity() {
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SensitivityAction(
+                                label = "DPI",
+                                icon = R.drawable.control_deck_pointer_speed,
+                                modifier = Modifier.weight(1f),
+                                onClick = { sensitivityPopup = SensitivityControl.TRACKPAD }
+                            )
+                            SensitivityAction(
+                                label = "Scroll",
+                                icon = R.drawable.control_deck_scroll_speed,
+                                modifier = Modifier.weight(1f),
+                                onClick = { sensitivityPopup = SensitivityControl.SCROLL }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -361,6 +413,93 @@ class ControlDeckActivity : AppCompatActivity() {
                         Text(text = "SCROLL", color = Color(0xFFAAAAAA), fontSize = 10.sp)
                     }
                 }
+
+                // Tiny but focusable native text editor. Reuses the working
+                // KeyListenerView / KeyInputConnection, including Gboard glide typing.
+                AndroidView(
+                    factory = { androidContext ->
+                        KeyListenerView(androidContext, null).apply {
+                            setDeviceId(deviceId)
+                            keyboardView = this
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.TopStart).size(1.dp)
+                )
+
+                IconButton(
+                    onClick = {
+                        if (!plugin.isKeyboardEnabled) {
+                            Toast.makeText(
+                                this@ControlDeckActivity,
+                                R.string.mousepad_keyboard_input_not_supported,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            val input = keyboardView
+                            if (input != null) {
+                                val manager = getSystemService(InputMethodManager::class.java)
+                                input.requestFocus()
+                                input.post {
+                                    manager?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 74.dp, bottom = 20.dp)
+                        .offset(y = -imeHeight)
+                        .size(52.dp)
+                        .background(Color(0xFF515151), CircleShape)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.control_deck_keyboard),
+                        contentDescription = "Open phone keyboard for Windows",
+                        tint = Color.White,
+                        modifier = Modifier.size(27.dp)
+                    )
+                }
+
+                when (sensitivityPopup) {
+                    SensitivityControl.TRACKPAD -> SensitivityPopup(
+                        title = "Trackpad DPI sensitivity",
+                        description = "Adjust how far the Windows pointer moves per swipe.",
+                        percent = trackpadSensitivity,
+                        onValueChange = { value ->
+                            trackpadSensitivity = value
+                            trackpad.sensitivityPercent = value
+                        },
+                        onDismiss = {
+                            preferences.edit().putInt(trackpadKey, trackpadSensitivity).apply()
+                            sensitivityPopup = null
+                        },
+                        onReset = {
+                            trackpadSensitivity = 100
+                            trackpad.sensitivityPercent = 100
+                            preferences.edit().putInt(trackpadKey, 100).apply()
+                        }
+                    )
+                    SensitivityControl.SCROLL -> SensitivityPopup(
+                        title = "Scroll sensitivity",
+                        description = "Adjust the right-hand scroll strip speed.",
+                        percent = scrollSensitivity,
+                        onValueChange = { value ->
+                            scrollSensitivity = value
+                            scroll.sensitivityPercent = value
+                        },
+                        onDismiss = {
+                            preferences.edit().putInt(scrollKey, scrollSensitivity).apply()
+                            sensitivityPopup = null
+                        },
+                        onReset = {
+                            scrollSensitivity = defaultScroll
+                            scroll.sensitivityPercent = defaultScroll
+                            preferences.edit().putInt(scrollKey, defaultScroll).apply()
+                        }
+                    )
+                    null -> Unit
+                }
+                }
             }
         }
     }
@@ -369,6 +508,71 @@ class ControlDeckActivity : AppCompatActivity() {
         if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
+}
+
+@Composable
+private fun SensitivityAction(
+    label: String,
+    icon: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .background(Color(0xFF343434), RoundedCornerShape(13.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 7.dp, horizontal = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(21.dp)
+        )
+        Text(label, color = Color.White, fontSize = 10.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun SensitivityPopup(
+    title: String,
+    description: String,
+    percent: Int,
+    onValueChange: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    onReset: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(description, fontSize = 13.sp)
+                Text(
+                    text = "$percent%",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Slider(
+                    value = percent.toFloat(),
+                    onValueChange = { onValueChange(it.roundToInt().coerceIn(25, 300)) },
+                    valueRange = 25f..300f
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("25%", fontSize = 12.sp)
+                    Text("300%", fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        dismissButton = {
+            TextButton(onClick = onReset) { Text("Reset") }
+        }
+    )
 }
 
 private fun deckIcon(id: String): Int = when (id) {

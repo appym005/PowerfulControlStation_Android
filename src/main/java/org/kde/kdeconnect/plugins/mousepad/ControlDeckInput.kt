@@ -30,6 +30,9 @@ internal class ControlDeckTrackpad(
     private var holdingLeft = false
     private var secondTapDistance = 0f
 
+    /** 100 is the existing deck pointer speed; changes take effect immediately. */
+    var sensitivityPercent: Int = 100
+
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent): Boolean = true
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
@@ -79,7 +82,8 @@ internal class ControlDeckTrackpad(
                         }
                     }
                     if (dx != 0f || dy != 0f) {
-                        plugin.sendMouseDelta(dx * 1.2f, dy * 1.2f)
+                        val factor = 1.2f * (sensitivityPercent.coerceIn(25, 300) / 100f)
+                        plugin.sendMouseDelta(dx * factor, dy * factor)
                     }
                 }
             }
@@ -118,15 +122,16 @@ internal class ControlDeckScroll(
     private val plugin: MousePadPlugin
 ) {
     private val direction: Int
-    private val coefficient: Double
+    var sensitivityPercent: Int
     private var previousY = 0f
     private var pending = 0.0
 
     init {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         direction = if (preferences.getBoolean(context.getString(R.string.mousepad_scroll_direction), false)) -1 else 1
-        val sensitivity = preferences.getInt(context.getString(R.string.mousepad_scroll_sensitivity), 100)
-        coefficient = (sensitivity.coerceAtLeast(1) / 100.0).pow(1.5)
+        sensitivityPercent = preferences.getInt(
+            context.getString(R.string.mousepad_scroll_sensitivity), 100
+        ).coerceIn(25, 300)
     }
 
     fun onTouch(event: MotionEvent): Boolean {
@@ -137,6 +142,7 @@ internal class ControlDeckScroll(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount == 1) {
+                    val coefficient = (sensitivityPercent.coerceIn(25, 300) / 100.0).pow(1.5)
                     pending += (previousY - event.y) * coefficient
                     previousY = event.y
                     if (abs(pending) >= 2.5) {
