@@ -110,3 +110,65 @@ internal fun shadowTrimIndex(text: String): Int {
     if (end < 0) return 0
     return text.lastIndexOf(' ', end).let { if (it >= 0) it + 1 else 0 }
 }
+
+
+/**
+ * Gboard's correction-suggestion tap can arrive as commitText("correctWord")
+ * even though the previous swiped word has already been sent to Windows.
+ * Without a host selection, the IME may append the suggestion locally.
+ *
+ * Only reinterpret it as a replacement while the latest short swipe is active,
+ * and either Gboard selected that word or the suggestion is a plausible spelling
+ * correction. A different subsequent swiped word must not erase the previous one.
+ */
+internal fun recentSwipeSuggestion(
+    mirrored: String,
+    incoming: String,
+    recentSwipe: Boolean,
+    withinWindow: Boolean,
+    imeSelectedWord: Boolean
+): String? {
+    if (!recentSwipe || !withinWindow || mirrored.isEmpty()) return null
+    val existing = mirrored.trimEnd(' ')
+    val suggestion = incoming.trimEnd(' ')
+    if (!isSwipeCandidate(existing) || !isSwipeCandidate(incoming) || suggestion == existing) {
+        return null
+    }
+    if (!imeSelectedWord) {
+        // When Gboard commits a *new* glide word it generally includes or
+        // establishes a separator. Do not reinterpret an auto-spaced glide.
+        if (incoming.endsWith(' ')) return null
+        val maximumEdits = maxOf(2, existing.length / 3)
+        if (shortWordEditDistance(existing, suggestion) > maximumEdits) return null
+    }
+    // Retain Gboard's auto-space, if the original word had one, otherwise the
+    // next plain keystroke would end up glued to the corrected word.
+    val separator = if (incoming.endsWith(' ') || mirrored.endsWith(' ')) " " else ""
+    return suggestion + separator
+}
+
+/** Bounded adjacent-transposition-aware edit distance for short IME words. */
+private fun shortWordEditDistance(a: String, b: String): Int {
+    if (a.isEmpty() || b.isEmpty()) return maxOf(a.length, b.length)
+    val distances = Array(a.length + 1) { IntArray(b.length + 1) }
+    for (i in 0..a.length) distances[i][0] = i
+    for (j in 0..b.length) distances[0][j] = j
+    for (i in 1..a.length) {
+        for (j in 1..b.length) {
+            val cost = if (a[i - 1].equals(b[j - 1], ignoreCase = true)) 0 else 1
+            var candidate = minOf(
+                distances[i - 1][j] + 1,
+                distances[i][j - 1] + 1,
+                distances[i - 1][j - 1] + cost
+            )
+            if (i > 1 && j > 1 &&
+                a[i - 1].equals(b[j - 2], ignoreCase = true) &&
+                a[i - 2].equals(b[j - 1], ignoreCase = true)
+            ) {
+                candidate = minOf(candidate, distances[i - 2][j - 2] + 1)
+            }
+            distances[i][j] = candidate
+        }
+    }
+    return distances[a.length][b.length]
+}
