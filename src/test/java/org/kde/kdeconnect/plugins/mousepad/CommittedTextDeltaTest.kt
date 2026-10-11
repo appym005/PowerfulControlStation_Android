@@ -232,4 +232,56 @@ class CommittedTextDeltaTest {
         assertEquals(CommittedTextDelta(6, ""), safeSessionTextDelta(current, "hello word "))
     }
 
+
+    @Test
+    fun autoSpacedSuggestionsAreNotMistakenForAdditionalText() {
+        assertEquals(
+            "hello ",
+            recentSwipeSuggestion("helo ", "hello ", true, true, false)
+        )
+        assertEquals(
+            "world ",
+            recentSwipeSuggestion("wrold ", "world ", true, true, false)
+        )
+        assertEquals(
+            "world ",
+            recentSwipeSuggestion("wrold ", "world ", true, true, true)
+        )
+    }
+
+    @Test
+    fun newGboardCompositionsCannotCorrectAnEarlierWord() {
+        assertEquals(
+            null,
+            recentSwipeSuggestion("hello ", "hell ", true, true, false, newWordComposing = true)
+        )
+        assertEquals(
+            null,
+            recentSwipeSuggestion("hello ", "hello", true, true, false, newWordComposing = true)
+        )
+        assertEquals(
+            "completing ",
+            recentSwipeSuggestion(
+                "compellingleting ", "completing ", true, true, true,
+                newWordComposing = true
+            )
+        )
+    }
+
+    @Test
+    fun aNewSwipeCanBeCorrectedMoreThanOnceWithoutReopeningIme() {
+        val first = "helo "
+        val corrected1 = "hello "
+        assertEquals(CommittedTextDelta(2, "lo "), safeSessionTextDelta(first, corrected1))
+        val nextSwipe = "$corrected1" + "wrold "
+        val nextCorrection = "$corrected1" + "world "
+        assertEquals(
+            CommittedTextDelta(4, "orld "),
+            safeSessionTextDelta(nextSwipe, nextCorrection)
+        )
+        val thirdSwipe = "$nextCorrection" + "teh "
+        val thirdCorrection = "$nextCorrection" + "the "
+        assertEquals(CommittedTextDelta(3, "he "), safeSessionTextDelta(thirdSwipe, thirdCorrection))
+    }
+
 }
