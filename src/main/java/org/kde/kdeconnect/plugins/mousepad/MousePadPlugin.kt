@@ -178,6 +178,22 @@ class MousePadPlugin : Plugin() {
         device.sendPacket(np)
     }
 
+    fun sendDeckShortcut(
+        key: String? = null,
+        specialKey: Int? = null,
+        ctrl: Boolean = false,
+        alt: Boolean = false,
+        superKey: Boolean = false
+    ) {
+        val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
+        if (key != null) np["key"] = key
+        if (specialKey != null) np["specialKey"] = specialKey
+        if (ctrl) np["ctrl"] = true
+        if (alt) np["alt"] = true
+        if (superKey) np["super"] = true
+        sendPacket(np)
+    }
+
     fun sendText(content: String) {
         val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
         np["key"] = content
