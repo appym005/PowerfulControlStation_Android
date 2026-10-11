@@ -112,9 +112,13 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         if (interceptControlShortcut(text)) return true
         expirePriorWordIfNeeded()
         val input = text.toString()
+        // When Gboard has an active provisional composition, its local
+        // Editable is ahead of the remote shadow. Delegate to Android's
+        // natural composing-text replacement instead of forcing a selection.
+        val localIsCommitted = editable?.toString() == sentShadow
         val recentWord = recentSessionWord(sentShadow)
             ?.takeIf { it.start >= remoteSafeFrom }
-        val corrected = recentSwipeSuggestion(
+        val corrected = if (localIsCommitted) recentSwipeSuggestion(
             mirrored = recentWord?.text.orEmpty(),
             incoming = input,
             recentSwipe = lastWasSwipe,
@@ -122,8 +126,14 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
                 SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs,
             imeSelectedWord = imeSelectedRecentWord,
             newWordComposing = newWordComposing
-        )
+        ) else null
+        val hadSelectionHint = imeSelectedRecentWord
         imeSelectedRecentWord = false
+        if (lastWasSwipe && input.length > 1) {
+            Log.d(logTag, "Suggestion check: chosen=" + (corrected != null) +
+                " composing=" + (!localIsCommitted) +
+                " selectionHint=" + hadSelectionHint)
+        }
 
         if (corrected != null && recentWord != null) {
             val buffer = editable ?: return super.commitText(text, newCursorPosition)
