@@ -102,8 +102,7 @@ try {
     exit 1
 }
 
-$cursorWake = [PowerfulControlStationCursorWakeV2]
-$prior = $cursorWake::ReadPosition()
+$prior = [PowerfulControlStationCursorWakeV2]::ReadPosition()
 $valid = $prior -ne [long]::MinValue
 $warned = $false
 
@@ -111,7 +110,7 @@ Write-Host "Cursor wake helper running. Touch Samsung Second Screen, then move t
 
 while ($true) {
     Start-Sleep -Milliseconds 40
-    $current = $cursorWake::ReadPosition()
+    $current = [PowerfulControlStationCursorWakeV2]::ReadPosition()
 
     if ($current -eq [long]::MinValue) {
         $valid = $false
@@ -119,7 +118,7 @@ while ($true) {
     }
 
     if ($valid -and $current -ne $prior) {
-        $injected = $cursorWake::WakeMousePointer($current)
+        $injected = [PowerfulControlStationCursorWakeV2]::WakeMousePointer($current)
         if (-not $injected -and -not $warned) {
             Write-Warning "Windows blocked mouse-event injection. If a target application runs elevated, try testing in a normal app first."
             $warned = $true
