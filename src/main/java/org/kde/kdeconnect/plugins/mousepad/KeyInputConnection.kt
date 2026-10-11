@@ -6,6 +6,7 @@
 package org.kde.kdeconnect.plugins.mousepad
 
 import android.os.SystemClock
+import android.text.Selection
 import android.view.KeyEvent
 import android.view.inputmethod.BaseInputConnection
 
@@ -24,11 +25,15 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     private var sentShadow = ""
     private var lastEditAt = 0L
     private var lastWasSwipe = false
+    // Some Gboard correction taps identify the previous word by explicitly
+    // selecting it or setting a composing region around it.
+    private var imeSelectedRecentWord = false
     private val correctionWindowMs = 12000L
 
     fun invalidateRemoteContext() {
         sentShadow = ""
         lastWasSwipe = false
+        imeSelectedRecentWord = false
         editable?.clear()
     }
 
@@ -45,15 +50,64 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
 
     override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
         expirePriorWordIfNeeded()
+        val input = text.toString()
+        val corrected = recentSwipeSuggestion(
+            mirrored = sentShadow,
+            incoming = input,
+            recentSwipe = lastWasSwipe,
+            withinWindow = SystemClock.uptimeMillis() - lastEditAt <= correctionWindowMs,
+            imeSelectedWord = imeSelectedRecentWord
+        )
+        imeSelectedRecentWord = false
+
+        if (corrected != null) {
+            val buffer = editable ?: return false
+            // Gboard sometimes appends a tapped suggestion because it holds a
+            // selection index from before we shortened the local IME buffer.
+            // Explicitly replace the *local recent word*; flushCommittedText()
+            // then sends the matching Backspaces and corrected suffix to Windows.
+            // Never select or edit text outside this bounded local mirror.
+            if (getComposingSpanStart(buffer) >= 0 || getComposingSpanEnd(buffer) >= 0) {
+                super.finishComposingText()
+            }
+            Selection.setSelection(buffer, 0, buffer.length)
+            val accepted = super.commitText(corrected, newCursorPosition)
+            if (accepted) {
+                lastWasSwipe = true
+                flushCommittedText()
+            }
+            return accepted
+        }
+
         val committed = super.commitText(text, newCursorPosition)
         if (committed) {
-            // Gboard usually commits glide words as a single multi-character
-            // segment, unlike regular typing which commits one character.
-            if (isSwipeCandidate(text.toString())) lastWasSwipe = true
+            // Glide words arrive as multi-character commits; ordinary typing
+            // generally arrives one character at a time.
+            if (isSwipeCandidate(input)) lastWasSwipe = true
             else if (text.any { it.isWhitespace() } && sentShadow.isEmpty()) lastWasSwipe = false
             flushCommittedText()
         }
         return committed
+    }
+
+    override fun setComposingRegion(start: Int, end: Int): Boolean {
+        val length = editable?.length ?: 0
+        if (lastWasSwipe && length > 0 && start != end &&
+            minOf(start, end) < length && maxOf(start, end) > 0
+        ) {
+            imeSelectedRecentWord = true
+        }
+        return super.setComposingRegion(start, end)
+    }
+
+    override fun setSelection(start: Int, end: Int): Boolean {
+        val length = editable?.length ?: 0
+        if (lastWasSwipe && length > 0 && start != end &&
+            minOf(start, end) < length && maxOf(start, end) > 0
+        ) {
+            imeSelectedRecentWord = true
+        }
+        return super.setSelection(start, end)
     }
 
     override fun finishComposingText(): Boolean {
