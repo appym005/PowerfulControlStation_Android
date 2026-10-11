@@ -137,6 +137,19 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
 
         if (corrected != null && recentWord != null) {
             val buffer = editable ?: return super.commitText(text, newCursorPosition)
+            if (recentWord.end > buffer.length ||
+                buffer.subSequence(recentWord.start, recentWord.end).toString() != recentWord.text
+            ) {
+                // Gboard already modified the composition before commitText:
+                // don't replace stale indices in the editor.
+                Log.d(logTag, "Suggestion delegated: composing word changed")
+                val accepted = super.commitText(text, newCursorPosition)
+                if (accepted) flushCommittedText()
+                lastWasSwipe = false
+                composingWasGlide = false
+                newWordComposing = false
+                return accepted
+            }
             // Preserve all preceding Android text/selection indices; select ONLY
             // the current word for replacement. Clearing/trimming earlier text
             // used to desynchronize Gboard after the first successful correction.
