@@ -297,4 +297,60 @@ class CommittedTextDeltaTest {
         assertEquals(null, RemoteModifierKey.ctrlLetter("🌍"))
     }
 
+
+    @Test
+    fun invalidEarlierWordCorrectionRebasesWithoutTouchingLiveEditor() {
+        assertEquals(
+            RemoteImeDecision.Rebase,
+            decideRemoteImeEdit("hello world ", "world ", 0)
+        )
+        // After rebase, Gboard's next commit still reaches Windows.
+        assertEquals(
+            RemoteImeDecision.Forward(CommittedTextDelta(0, "next")),
+            decideRemoteImeEdit("world ", "world next", 6)
+        )
+    }
+
+    @Test
+    fun remoteFocusChangeCannotBackspacePreviousWindowsField() {
+        assertEquals(
+            RemoteImeDecision.Rebase,
+            decideRemoteImeEdit("oldtext ", "oldtex ", 8)
+        )
+        assertEquals(
+            RemoteImeDecision.Forward(CommittedTextDelta(0, "new ")),
+            decideRemoteImeEdit("oldtext ", "oldtext new ", 8)
+        )
+        assertEquals(
+            RemoteImeDecision.Forward(CommittedTextDelta(1, "d ")),
+            decideRemoteImeEdit("oldtext new ", "oldtext ned ", 8)
+        )
+    }
+
+    @Test
+    fun recentSuggestionCorrectionsStillForwardAfterRecoveryFix() {
+        assertEquals(
+            RemoteImeDecision.Forward(CommittedTextDelta(2, "lo ")),
+            decideRemoteImeEdit("helo ", "hello ", 0)
+        )
+        assertEquals(
+            RemoteImeDecision.Forward(CommittedTextDelta(5, "orld ")),
+            decideRemoteImeEdit("hello wrold ", "hello world ", 0)
+        )
+    }
+
+    @Test
+    fun invalidSelectionWithinGboardHistoryDoesNotBlockLaterTyping() {
+        val previous = "hello word first "
+        assertEquals(
+            RemoteImeDecision.Rebase,
+            decideRemoteImeEdit(previous, "hello first ", 0)
+        )
+        val accepted = "hello first "
+        assertEquals(
+            RemoteImeDecision.Forward(CommittedTextDelta(0, "again")),
+            decideRemoteImeEdit(accepted, "$accepted" + "again", accepted.length)
+        )
+    }
+
 }
