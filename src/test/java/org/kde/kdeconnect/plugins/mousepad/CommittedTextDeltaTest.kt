@@ -284,4 +284,17 @@ class CommittedTextDeltaTest {
         assertEquals(CommittedTextDelta(3, "he "), safeSessionTextDelta(thirdSwipe, thirdCorrection))
     }
 
+
+    @Test
+    fun ctrlShortcutFromGboardNeedsOnlyOneAsciiLetter() {
+        assertEquals("c", RemoteModifierKey.ctrlLetter("C"))
+        assertEquals("a", RemoteModifierKey.ctrlLetter("a"))
+        assertEquals("v", RemoteModifierKey.ctrlLetter("v"))
+        assertEquals("z", RemoteModifierKey.ctrlLetter("Z"))
+        assertEquals(null, RemoteModifierKey.ctrlLetter("hello"))
+        assertEquals(null, RemoteModifierKey.ctrlLetter(" "))
+        assertEquals(null, RemoteModifierKey.ctrlLetter("\n"))
+        assertEquals(null, RemoteModifierKey.ctrlLetter("🌍"))
+    }
+
 }
