@@ -134,4 +134,48 @@ class CommittedTextDeltaTest {
         assertEquals(true, isSwipeCandidate("hello "))
         assertEquals(false, isSwipeCandidate("hello world"))
     }
+
+    @Test
+    fun gboardSuggestionReplacesLastSwipedWordInsteadOfAppending() {
+        assertEquals(
+            "hello ",
+            recentSwipeSuggestion("helo ", "hello", true, true, false)
+        )
+        assertEquals(
+            "word",
+            recentSwipeSuggestion("wrod", "word", true, true, false)
+        )
+    }
+
+    @Test
+    fun explicitlySelectedSuggestionSupportsMoreDistantCorrections() {
+        assertEquals(
+            "completing ",
+            recentSwipeSuggestion("compellingleting ", "completing ", true, true, true)
+        )
+    }
+
+    @Test
+    fun nextGlideWordAndNormalTypingMustNotReplacePreviousWord() {
+        assertEquals(null, recentSwipeSuggestion("hello ", "world ", true, true, false))
+        assertEquals(null, recentSwipeSuggestion("hello ", "world", true, true, false))
+        assertEquals(null, recentSwipeSuggestion("hello ", "a", true, true, false))
+        assertEquals(null, recentSwipeSuggestion("hello ", "hello", true, true, false))
+    }
+
+    @Test
+    fun aStaleSwipeCannotTriggerSuggestionReplacementInAnotherField() {
+        assertEquals(null, recentSwipeSuggestion("helo ", "hello", true, false, true))
+        assertEquals(null, recentSwipeSuggestion("helo ", "hello", false, true, true))
+        assertEquals(null, recentSwipeSuggestion("x".repeat(65), "hello", true, true, true))
+    }
+
+    @Test
+    fun suggestionWithSelectedWordMayCarryAnAutoSpace() {
+        assertEquals(
+            "hello ",
+            recentSwipeSuggestion("helo", "hello ", true, true, true)
+        )
+    }
+
 }
