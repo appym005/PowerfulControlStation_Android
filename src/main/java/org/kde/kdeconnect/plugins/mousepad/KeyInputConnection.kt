@@ -7,6 +7,7 @@ package org.kde.kdeconnect.plugins.mousepad
 
 import android.os.SystemClock
 import android.text.Selection
+import android.util.Log
 import android.view.KeyEvent
 import android.view.inputmethod.BaseInputConnection
 
@@ -34,14 +35,23 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     private var shortcutEcho: String? = null
     private var shortcutEchoAt = 0L
     private val correctionWindowMs = 20000L
+    // Text prior to this local position is not guaranteed to exist in the
+    // current Windows field (e.g. after switching focus with the trackpad).
+    private var remoteSafeFrom = 0
+    private val logTag = "PCSRemoteIme"
 
     fun invalidateRemoteContext() {
-        sentShadow = ""
+        // Never clear an Editable while Gboard holds a live InputConnection.
+        // Doing so invalidates selection/composition indices and can leave
+        // Gboard unable to send any more text until the keyboard is reopened.
+        val current = editable?.toString().orEmpty()
+        sentShadow = current
+        remoteSafeFrom = current.length
         lastWasSwipe = false
         imeSelectedRecentWord = false
         composingWasGlide = false
         newWordComposing = false
-        editable?.clear()
+        lastEditAt = 0L
     }
 
     override fun beginBatchEdit(): Boolean {
@@ -103,6 +113,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         expirePriorWordIfNeeded()
         val input = text.toString()
         val recentWord = recentSessionWord(sentShadow)
+            ?.takeIf { it.start >= remoteSafeFrom }
         val corrected = recentSwipeSuggestion(
             mirrored = recentWord?.text.orEmpty(),
             incoming = input,
@@ -151,7 +162,8 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
     private fun selectionTargetsRecentWord(start: Int, end: Int): Boolean {
         if (!lastWasSwipe || start == end) return false
         if (SystemClock.uptimeMillis() - lastEditAt > correctionWindowMs) return false
-        val word = recentSessionWord(sentShadow) ?: return false
+        val word = recentSessionWord(sentShadow)
+            ?.takeIf { it.start >= remoteSafeFrom } ?: return false
         val lo = minOf(start, end)
         val hi = maxOf(start, end)
         // Selection indices must target the actual last word, not an earlier
@@ -274,14 +286,34 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         // farther back than the latest word.
         val delta = safeSessionTextDelta(sentShadow, current)
         if (delta == null) {
-            // Without restoring local state, every subsequent delta would be
-            // compared to a stale Windows shadow and Gboard could stop working.
-            // Reject dangerous backwards edits locally and keep the host intact.
-            localText.replace(0, localText.length, sentShadow)
-            Selection.setSelection(localText, localText.length)
+            // IME changed more than the latest remote word. Don't send unsafe
+            // Backspaces to Windows, but ALWAYS accept the new Android baseline
+            // without rewriting live composing text/selection. Otherwise Gboard
+            // can get stuck repeating the rejected edit forever.
+            Log.w(logTag, "Resync after out-of-range edit; oldLength=" +
+                sentShadow.length + " newLength=" + current.length)
+            sentShadow = current
+            remoteSafeFrom = current.length
             lastWasSwipe = false
             imeSelectedRecentWord = false
+            composingWasGlide = false
+            newWordComposing = false
+            lastEditAt = 0L
             return
+        }
+        if (delta.backspaces > 0) {
+            val safeWord = recentSessionWord(sentShadow)
+            if (safeWord == null || safeWord.start < remoteSafeFrom) {
+                Log.w(logTag, "Ignored deletion touching unsynchronized remote history")
+                sentShadow = current
+                remoteSafeFrom = current.length
+                lastWasSwipe = false
+                imeSelectedRecentWord = false
+                composingWasGlide = false
+                newWordComposing = false
+                lastEditAt = 0L
+                return
+            }
         }
         if (delta.backspaces == 0 && delta.inserted.length == 1 &&
             view.sendCtrlShortcutIfArmed(delta.inserted)
@@ -299,9 +331,21 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
         }
         sentShadow = current
         lastEditAt = SystemClock.uptimeMillis()
+        // At a fresh word boundary after a context reset, subsequent
+        // words can be safely corrected without touching the older prefix.
+        if (remoteSafeFrom > 0 && current.length > remoteSafeFrom &&
+            current.substring(remoteSafeFrom).any { it.isWhitespace() }
+        ) {
+            remoteSafeFrom = current.indexOfFirstFrom(remoteSafeFrom) { it.isWhitespace() } + 1
+        }
 
         // Intentionally do NOT trim the Android Editable. Android's IME owns
         // the cursor offsets within that buffer until this keyboard is closed.
         // Remote correction safety is enforced by safeSessionTextDelta().
     }
+}
+
+private inline fun String.indexOfFirstFrom(start: Int, predicate: (Char) -> Boolean): Int {
+    for (i in start until length) if (predicate(this[i])) return i
+    return -1
 }
