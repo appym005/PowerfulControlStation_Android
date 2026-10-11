@@ -14,6 +14,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 
 import org.kde.kdeconnect.KdeConnect;
 import org.kde.kdeconnect.NetworkPacket;
@@ -24,6 +25,8 @@ public class KeyListenerView extends View {
     private KeyInputConnection activeInputConnection;
     private boolean oneShotShift = false;
     private Runnable onShiftConsumed;
+    private boolean oneShotCtrl = false;
+    private Runnable onCtrlConsumed;
 
     public void invalidateRemoteContext() {
         if (activeInputConnection != null) activeInputConnection.invalidateRemoteContext();
@@ -35,6 +38,51 @@ public class KeyListenerView extends View {
 
     public void setOnShiftConsumed(Runnable callback) {
         onShiftConsumed = callback;
+    }
+
+    public void setOneShotCtrl(boolean enabled) {
+        oneShotCtrl = enabled;
+    }
+
+    public void setOnCtrlConsumed(Runnable callback) {
+        onCtrlConsumed = callback;
+    }
+
+    private boolean consumeOneShotCtrl() {
+        if (!oneShotCtrl) return false;
+        oneShotCtrl = false;
+        if (onCtrlConsumed != null) onCtrlConsumed.run();
+        return true;
+    }
+
+    /**
+     * Gboard often sends letters through setComposingText, not KeyEvents.
+     * Consume the next ASCII letter as a real KDE Connect Ctrl shortcut,
+     * rather than forwarding it as unmodified text to Windows.
+     */
+    public boolean sendCtrlShortcutIfArmed(CharSequence input) {
+        if (!oneShotCtrl || input == null || input.length() != 1) return false;
+        char key = input.charAt(0);
+        if (!((key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z'))) {
+            return false;
+        }
+        MousePadPlugin plugin = KdeConnect.getInstance().getDevicePlugin(deviceId, MousePadPlugin.class);
+        if (plugin == null) return false;
+        final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
+        np.set("key", String.valueOf(Character.toLowerCase(key)));
+        np.set("ctrl", true);
+        if (consumeOneShotShift()) np.set("shift", true);
+        consumeOneShotCtrl();
+        plugin.sendPacket(np);
+        return true;
+    }
+
+    /** Refresh Gboard's editor state after a shortcut changes Windows focus/selection. */
+    public void restartImeAfterShortcut() {
+        post(() -> {
+            InputMethodManager manager = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null && hasFocus()) manager.restartInput(this);
+        });
     }
 
     private boolean consumeOneShotShift() {
@@ -121,8 +169,10 @@ public class KeyListenerView extends View {
             return;
         }
         final String text = chars.toString();
-        if (consumeOneShotShift() && text.length() == 1 &&
-            Character.isLetter(text.charAt(0)) && text.charAt(0) < 128) {
+        if (sendCtrlShortcutIfArmed(text)) return;
+        if (oneShotShift && text.length() == 1 &&
+            Character.isLetter(text.charAt(0)) && text.charAt(0) < 128 &&
+            consumeOneShotShift()) {
             final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
             np.set("key", text.toLowerCase(java.util.Locale.ROOT));
             np.set("shift", true);
@@ -140,6 +190,7 @@ public class KeyListenerView extends View {
         final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
         np.set("specialKey", SpecialKeysMap.get(KeyEvent.KEYCODE_ENTER));
         if (consumeOneShotShift()) np.set("shift", true);
+        if (consumeOneShotCtrl()) np.set("ctrl", true);
         sendKeyPressPacket(np);
     }
 
@@ -210,6 +261,10 @@ public class KeyListenerView extends View {
 
         if (event.isShiftPressed() || consumeOneShotShift()) {
             np.set("shift", true);
+        }
+        if (consumeOneShotCtrl()) {
+            np.set("ctrl", true);
+            modifier = true;
         }
 
         if (event.isMetaPressed()) {
