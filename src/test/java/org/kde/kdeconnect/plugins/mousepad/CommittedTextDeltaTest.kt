@@ -131,6 +131,7 @@ class CommittedTextDeltaTest {
         assertEquals(false, isSwipeCandidate("a"))
         assertEquals(false, isSwipeCandidate(" "))
         assertEquals(true, isSwipeCandidate("hello"))
+        assertEquals(true, isSwipeCandidate("hello "))
         assertEquals(false, isSwipeCandidate("hello world"))
     }
 }
