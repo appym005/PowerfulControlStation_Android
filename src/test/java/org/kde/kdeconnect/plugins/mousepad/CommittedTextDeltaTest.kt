@@ -96,8 +96,8 @@ class CommittedTextDeltaTest {
 
     @Test
     fun lastSwipeWordCanBeReplacedBySuggestedCorrection() {
-        assertEquals(CommittedTextDelta(3, "lp"), boundedWordCorrection("hepl", "help"))
-        assertEquals(CommittedTextDelta(4, "word"), boundedWordCorrection("wrod", "word"))
+        assertEquals(CommittedTextDelta(2, "lp"), boundedWordCorrection("hepl", "help"))
+        assertEquals(CommittedTextDelta(3, "ord"), boundedWordCorrection("wrod", "word"))
     }
 
     @Test
@@ -123,7 +123,7 @@ class CommittedTextDeltaTest {
         assertEquals(6, shadowTrimIndex("hello world"))
         assertEquals(6, shadowTrimIndex("hello world "))
         assertEquals(6, shadowTrimIndex("hello\n"))
-        assertEquals(7, shadowTrimIndex("abc def\n"))
+        assertEquals(8, shadowTrimIndex("abc def\n"))
     }
 
     @Test
