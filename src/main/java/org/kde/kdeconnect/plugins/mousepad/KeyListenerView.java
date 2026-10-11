@@ -21,6 +21,28 @@ import org.kde.kdeconnect.NetworkPacket;
 public class KeyListenerView extends View {
 
     private String deviceId;
+    private KeyInputConnection activeInputConnection;
+    private boolean oneShotShift = false;
+    private Runnable onShiftConsumed;
+
+    public void invalidateRemoteContext() {
+        if (activeInputConnection != null) activeInputConnection.invalidateRemoteContext();
+    }
+
+    public void setOneShotShift(boolean enabled) {
+        oneShotShift = enabled;
+    }
+
+    public void setOnShiftConsumed(Runnable callback) {
+        onShiftConsumed = callback;
+    }
+
+    private boolean consumeOneShotShift() {
+        if (!oneShotShift) return false;
+        oneShotShift = false;
+        if (onShiftConsumed != null) onShiftConsumed.run();
+        return true;
+    }
 
     public static final SparseIntArray SpecialKeysMap = new SparseIntArray();
 
@@ -84,7 +106,8 @@ public class KeyListenerView extends View {
             | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
         outAttrs.initialSelStart = 0;
         outAttrs.initialSelEnd = 0;
-        return new KeyInputConnection(this, true);
+        activeInputConnection = new KeyInputConnection(this, true);
+        return activeInputConnection;
     }
 
     @Override
@@ -97,7 +120,16 @@ public class KeyListenerView extends View {
         if (plugin == null) {
             return;
         }
-        plugin.sendText(chars.toString());
+        final String text = chars.toString();
+        if (consumeOneShotShift() && text.length() == 1 &&
+            Character.isLetter(text.charAt(0)) && text.charAt(0) < 128) {
+            final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
+            np.set("key", text.toLowerCase(java.util.Locale.ROOT));
+            np.set("shift", true);
+            plugin.sendPacket(np);
+        } else {
+            plugin.sendText(text);
+        }
     }
 
     /**
@@ -107,6 +139,7 @@ public class KeyListenerView extends View {
     public void sendEnterKey() {
         final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
         np.set("specialKey", SpecialKeysMap.get(KeyEvent.KEYCODE_ENTER));
+        if (consumeOneShotShift()) np.set("shift", true);
         sendKeyPressPacket(np);
     }
 
@@ -175,7 +208,7 @@ public class KeyListenerView extends View {
             modifier = true;
         }
 
-        if (event.isShiftPressed()) {
+        if (event.isShiftPressed() || consumeOneShotShift()) {
             np.set("shift", true);
         }
 
