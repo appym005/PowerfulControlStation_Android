@@ -93,4 +93,44 @@ class CommittedTextDeltaTest {
         assertEquals(0, safeImeRemoteBackspaceCount(2000, 0, false))
         assertEquals(0, safeImeRemoteBackspaceCount(0, 150, false))
     }
+
+    @Test
+    fun lastSwipeWordCanBeReplacedBySuggestedCorrection() {
+        assertEquals(CommittedTextDelta(3, "lp"), boundedWordCorrection("hepl", "help"))
+        assertEquals(CommittedTextDelta(4, "word"), boundedWordCorrection("wrod", "word"))
+    }
+
+    @Test
+    fun swipeBackspaceRemovesEntireRecentWord() {
+        assertEquals(5, swipeDeleteLength("hello", 1, 0, true, true))
+        assertEquals(6, swipeDeleteLength("hello ", 1, 0, true, true))
+        assertEquals(0, swipeDeleteLength("hello", 1, 0, false, true))
+        assertEquals(0, swipeDeleteLength("hello", 1, 0, true, false))
+        assertEquals(0, swipeDeleteLength("hello", 2, 0, true, true))
+    }
+
+    @Test
+    fun staleOrLargeWordsNeverTriggerMassDeletion() {
+        val old = "x".repeat(120)
+        val changed = "y".repeat(120)
+        assertEquals(CommittedTextDelta(0, ""), boundedWordCorrection(old, changed))
+        assertEquals(0, swipeDeleteLength(old, 1, 0, true, true))
+    }
+
+    @Test
+    fun bufferKeepsOnlyMostRecentWordForGboardCorrection() {
+        assertEquals(0, shadowTrimIndex("hello "))
+        assertEquals(6, shadowTrimIndex("hello world"))
+        assertEquals(6, shadowTrimIndex("hello world "))
+        assertEquals(6, shadowTrimIndex("hello\n"))
+        assertEquals(7, shadowTrimIndex("abc def\n"))
+    }
+
+    @Test
+    fun regularSingleCharacterTypingIsNotMisclassifiedAsSwipe() {
+        assertEquals(false, isSwipeCandidate("a"))
+        assertEquals(false, isSwipeCandidate(" "))
+        assertEquals(true, isSwipeCandidate("hello"))
+        assertEquals(false, isSwipeCandidate("hello world"))
+    }
 }
