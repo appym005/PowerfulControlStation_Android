@@ -28,3 +28,36 @@ internal fun committedTextDelta(previous: String, current: String): CommittedTex
         inserted = current.substring(commonUnits)
     )
 }
+
+/**
+ * IMEs can submit Enter as a text newline rather than a hardware key event.
+ * Windows KDE Connect then inserts text instead of simulating VK_RETURN.
+ * Split committed text into regular text and physical Enter operations.
+ */
+internal sealed class RemoteTextAction {
+    data class Text(val value: String) : RemoteTextAction()
+    object Enter : RemoteTextAction()
+}
+
+internal fun committedTextActions(inserted: String): List<RemoteTextAction> {
+    if (inserted.isEmpty()) return emptyList()
+    val actions = mutableListOf<RemoteTextAction>()
+    var start = 0
+    var index = 0
+    while (index < inserted.length) {
+        val char = inserted[index]
+        if (char == '\r' || char == '\n') {
+            if (index > start) {
+                actions.add(RemoteTextAction.Text(inserted.substring(start, index)))
+            }
+            actions.add(RemoteTextAction.Enter)
+            if (char == '\r' && index + 1 < inserted.length && inserted[index + 1] == '\n') {
+                index++
+            }
+            start = index + 1
+        }
+        index++
+    }
+    if (start < inserted.length) actions.add(RemoteTextAction.Text(inserted.substring(start)))
+    return actions
+}

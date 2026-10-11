@@ -101,6 +101,16 @@ public class KeyListenerView extends View {
     }
 
     /**
+     * Send a real host Enter keystroke instead of a text newline.
+     * This permits terminal execution and works with physical Shift on Windows.
+     */
+    public void sendEnterKey() {
+        final NetworkPacket np = new NetworkPacket(MousePadPlugin.PACKET_TYPE_MOUSEPAD_REQUEST);
+        np.set("specialKey", SpecialKeysMap.get(KeyEvent.KEYCODE_ENTER));
+        sendKeyPressPacket(np);
+    }
+
+    /**
      * Forward a deleted code point as a remote Backspace key. This is used
      * when the Android IME corrects or deletes previously committed text.
      */

@@ -90,7 +90,12 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
 
         val delta = committedTextDelta(lastSentText, current)
         if (delta.backspaces > 0) view.sendBackspaces(delta.backspaces)
-        if (delta.inserted.isNotEmpty()) view.sendChars(delta.inserted)
+        for (action in committedTextActions(delta.inserted)) {
+            when (action) {
+                is RemoteTextAction.Text -> view.sendChars(action.value)
+                RemoteTextAction.Enter -> view.sendEnterKey()
+            }
+        }
 
         lastSentText = current
     }

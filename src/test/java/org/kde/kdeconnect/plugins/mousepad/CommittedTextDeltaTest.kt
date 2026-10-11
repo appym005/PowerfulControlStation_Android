@@ -44,4 +44,40 @@ class CommittedTextDeltaTest {
     fun handlesNonLatinCharacters() {
         assertEquals(CommittedTextDelta(0, " दुनिया"), committedTextDelta("नमस्ते", "नमस्ते दुनिया"))
     }
+
+    @Test
+    fun gboardCommittedEnterBecomesRealHostEnter() {
+        assertEquals(
+            listOf(RemoteTextAction.Text("Get-Process"), RemoteTextAction.Enter),
+            committedTextActions("Get-Process\n")
+        )
+    }
+
+    @Test
+    fun carriageReturnAndWindowsNewlineSendOneEnter() {
+        assertEquals(listOf(RemoteTextAction.Enter), committedTextActions("\r"))
+        assertEquals(listOf(RemoteTextAction.Enter), committedTextActions("\r\n"))
+    }
+
+    @Test
+    fun consecutiveEntersAreNotDropped() {
+        assertEquals(
+            listOf(
+                RemoteTextAction.Text("hello"),
+                RemoteTextAction.Enter,
+                RemoteTextAction.Enter,
+                RemoteTextAction.Text("world")
+            ),
+            committedTextActions("hello\n\nworld")
+        )
+    }
+
+    @Test
+    fun ordinarySwipeTextAndUnicodeRemainUntouched() {
+        assertEquals(
+            listOf(RemoteTextAction.Text("दुनिया 🌍")),
+            committedTextActions("दुनिया 🌍")
+        )
+        assertEquals(emptyList<RemoteTextAction>(), committedTextActions(""))
+    }
 }
