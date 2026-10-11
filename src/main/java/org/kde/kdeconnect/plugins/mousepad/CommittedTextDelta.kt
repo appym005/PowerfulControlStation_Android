@@ -217,3 +217,29 @@ internal fun safeSessionTextDelta(previous: String, current: String): CommittedT
     val allowedCodePoints = latestWord.text.codePointCount(0, latestWord.text.length)
     return if (delta.backspaces <= allowedCodePoints) delta else null
 }
+
+
+/**
+ * A rejected Windows-side edit must never cause an IME Editable mutation.
+ * Rebase simply moves our bookkeeping baseline to the Android text Gboard
+ * already owns; typing can then continue without closing the keyboard.
+ */
+internal sealed class RemoteImeDecision {
+    data class Forward(val delta: CommittedTextDelta) : RemoteImeDecision()
+    object Rebase : RemoteImeDecision()
+}
+
+internal fun decideRemoteImeEdit(
+    sentText: String,
+    currentText: String,
+    remoteSafeFrom: Int
+): RemoteImeDecision {
+    val delta = safeSessionTextDelta(sentText, currentText) ?: return RemoteImeDecision.Rebase
+    if (delta.backspaces == 0) return RemoteImeDecision.Forward(delta)
+    val word = recentSessionWord(sentText) ?: return RemoteImeDecision.Rebase
+    return if (word.start >= remoteSafeFrom) {
+        RemoteImeDecision.Forward(delta)
+    } else {
+        RemoteImeDecision.Rebase
+    }
+}
