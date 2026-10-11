@@ -55,7 +55,15 @@ class MousePadPlugin : Plugin() {
                 listOf(mouseAndKeyboardInput, tvInput)
             }
         } else {
-            listOf(mouseAndKeyboardInput)
+            val deck = PluginUiButton(
+                context.getString(R.string.control_deck),
+                R.drawable.touchpad_plugin_action_24dp
+            ) { parentActivity ->
+                val intent = Intent(parentActivity, ControlDeckActivity::class.java)
+                intent.putExtra(ControlDeckActivity.EXTRA_DEVICE_ID, device.deviceId)
+                parentActivity.startActivity(intent)
+            }
+            listOf(mouseAndKeyboardInput, deck)
         }
     }
 
@@ -176,6 +184,24 @@ class MousePadPlugin : Plugin() {
         np["alt"] = true
         np["specialKey"] = KeyListenerView.SpecialKeysMap.get(KeyEvent.KEYCODE_F4)
         device.sendPacket(np)
+    }
+
+    fun sendDeckShortcut(
+        key: String? = null,
+        specialKey: Int? = null,
+        ctrl: Boolean = false,
+        alt: Boolean = false,
+        shift: Boolean = false,
+        superKey: Boolean = false
+    ) {
+        val np = NetworkPacket(PACKET_TYPE_MOUSEPAD_REQUEST)
+        if (key != null) np["key"] = key
+        if (specialKey != null) np["specialKey"] = specialKey
+        if (ctrl) np["ctrl"] = true
+        if (alt) np["alt"] = true
+        if (shift) np["shift"] = true
+        if (superKey) np["super"] = true
+        sendPacket(np)
     }
 
     fun sendText(content: String) {

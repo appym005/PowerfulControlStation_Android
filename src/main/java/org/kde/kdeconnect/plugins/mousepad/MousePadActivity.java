@@ -79,6 +79,8 @@ public class MousePadActivity
     private double accumulatedDistanceY = 0;
     private boolean pendingShowKeyboard = false;
     private boolean keyboardShown = false;
+    private float previousWheelY = 0;
+    private double accumulatedWheelY = 0;
 
     private GestureDetector mDetector;
     private SensorManager mSensorManager;
@@ -164,6 +166,7 @@ public class MousePadActivity
         getBinding().mouseClickLeft.setOnClickListener(v -> sendLeftClick());
         getBinding().mouseClickMiddle.setOnClickListener(v -> sendMiddleClick());
         getBinding().mouseClickRight.setOnClickListener(v -> sendRightClick());
+        getBinding().mouseScrollWheel.setOnTouchListener(this::onDedicatedScrollWheelTouch);
 
         deviceId = getIntent().getStringExtra(EXTRA_DEVICE_ID);
 
@@ -583,6 +586,46 @@ public class MousePadActivity
             return;
         }
         plugin.sendRightClick();
+    }
+
+    /**
+     * A one-finger wheel strip, independent of touchpad pointer and click gestures.
+     * Reuses KDE Connect's existing scroll packet and the user's scroll preferences.
+     */
+    private boolean onDedicatedScrollWheelTouch(View view, MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                previousWheelY = event.getY();
+                accumulatedWheelY = 0;
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                if (event.getPointerCount() != 1) {
+                    // Disregard multi-touch on the wheel to avoid unexpected jumps.
+                    previousWheelY = event.getY();
+                    accumulatedWheelY = 0;
+                    return true;
+                }
+
+                // Finger up = wheel up. Mirrors the existing two-finger scroll handler.
+                float distanceY = previousWheelY - event.getY();
+                previousWheelY = event.getY();
+                accumulatedWheelY += distanceY * scrollCoefficient;
+
+                if (Math.abs(accumulatedWheelY) >= MinDistanceToSendScroll) {
+                    sendScroll(0, scrollDirection * accumulatedWheelY);
+                    accumulatedWheelY = 0;
+                }
+                return true;
+            case MotionEvent.ACTION_UP:
+                accumulatedWheelY = 0;
+                view.performClick();
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                accumulatedWheelY = 0;
+                return true;
+            default:
+                return true;
+        }
     }
 
     private void sendScroll(final double x, final double y) {

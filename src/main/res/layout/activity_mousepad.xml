@@ -43,6 +43,22 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
             android:contentDescription="@string/mousepad_info_no_gestures"
             />
 
+        <!-- Independent wheel strip; the remaining surface retains stock mouse gestures. -->
+        <TextView
+            android:id="@+id/mouse_scroll_wheel"
+            android:layout_width="60dp"
+            android:layout_height="match_parent"
+            android:layout_above="@id/mouse_buttons"
+            android:layout_alignParentEnd="true"
+            android:background="?attr/colorSurfaceVariant"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:contentDescription="@string/mousepad_scroll_wheel_description"
+            android:text="@string/mousepad_scroll_wheel_hint"
+            android:gravity="center"
+            android:padding="6dp"
+            android:textSize="12sp"
+            android:clickable="true" />
+
         <LinearLayout
                 android:id="@+id/mouse_buttons"
                 android:layout_width="match_parent"
