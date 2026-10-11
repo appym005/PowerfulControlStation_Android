@@ -322,7 +322,7 @@ class CommittedTextDeltaTest {
             decideRemoteImeEdit("oldtext ", "oldtext new ", 8)
         )
         assertEquals(
-            RemoteImeDecision.Forward(CommittedTextDelta(1, "d ")),
+            RemoteImeDecision.Forward(CommittedTextDelta(2, "d ")),
             decideRemoteImeEdit("oldtext new ", "oldtext ned ", 8)
         )
     }
