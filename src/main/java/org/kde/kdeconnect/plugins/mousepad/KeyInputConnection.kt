@@ -76,6 +76,7 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
                 lastWasSwipe = true
                 flushCommittedText()
             }
+            imeSelectedRecentWord = false
             return accepted
         }
 
@@ -87,24 +88,32 @@ internal class KeyInputConnection(private val view: KeyListenerView, fullEditor:
             else if (text.any { it.isWhitespace() } && sentShadow.isEmpty()) lastWasSwipe = false
             flushCommittedText()
         }
+        imeSelectedRecentWord = false
         return committed
     }
 
+    private fun selectionTargetsRecentWord(start: Int, end: Int): Boolean {
+        if (!lastWasSwipe || start == end) return false
+        if (SystemClock.uptimeMillis() - lastEditAt > correctionWindowMs) return false
+        val mirroredWordLength = sentShadow.trimEnd(' ').length
+        if (mirroredWordLength !in 2..64) return false
+        val lo = minOf(start, end)
+        val hi = maxOf(start, end)
+        // Gboard can retain absolute indices from before we trimmed earlier
+        // committed text out of the local mirror.
+        return (lo < mirroredWordLength && hi > 0) ||
+            (lo >= mirroredWordLength && hi - lo in 2..(mirroredWordLength + 1))
+    }
+
     override fun setComposingRegion(start: Int, end: Int): Boolean {
-        val length = editable?.length ?: 0
-        if (lastWasSwipe && length > 0 && start != end &&
-            minOf(start, end) < length && maxOf(start, end) > 0
-        ) {
+        if (selectionTargetsRecentWord(start, end)) {
             imeSelectedRecentWord = true
         }
         return super.setComposingRegion(start, end)
     }
 
     override fun setSelection(start: Int, end: Int): Boolean {
-        val length = editable?.length ?: 0
-        if (lastWasSwipe && length > 0 && start != end &&
-            minOf(start, end) < length && maxOf(start, end) > 0
-        ) {
+        if (selectionTargetsRecentWord(start, end)) {
             imeSelectedRecentWord = true
         }
         return super.setSelection(start, end)
