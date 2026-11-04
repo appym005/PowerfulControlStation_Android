@@ -5,6 +5,9 @@
 package org.kde.kdeconnect.plugins.gamepad
 
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -56,9 +59,21 @@ class GamepadActivity : AppCompatActivity() {
         }
         setContentView(root)
         ViewCompat.requestApplyInsets(root)
+        // Android 17 blocks local UDP traffic until ACCESS_LOCAL_NETWORK is granted.
+        if (Build.VERSION.SDK_INT >= 37 &&
+            checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf("android.permission.ACCESS_LOCAL_NETWORK"), 1737)
+        }
         transport = GamepadTransport(this) {
             surface.connectionStatus = it
             surface.invalidate()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1737 && grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Allow Nearby devices / Local network access to connect to Windows", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -143,6 +158,10 @@ internal class GamepadSurfaceView(
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
         canvas.drawColor(Color.rgb(13, 19, 31))
+        if (height > width) {
+            label(canvas, "Rotate tablet to landscape", width / 2f, height / 2f, width * .052f)
+            return
+        }
         val h = unit()
         color(muted)
         paint.textAlign = Paint.Align.LEFT
@@ -290,6 +309,7 @@ internal class GamepadSurfaceView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (height > width) { clearTouches(); return true }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex
