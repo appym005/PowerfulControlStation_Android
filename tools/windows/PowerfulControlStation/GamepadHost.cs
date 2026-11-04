@@ -216,9 +216,20 @@ internal sealed class GamepadHost : IDisposable
     {
         if (_controller is not null) return;
         _client ??= new ViGEmClient(); // Requires the separate ViGEmBus kernel driver.
-        _controller = _client.CreateXbox360Controller();
-        _controller.AutoSubmitReport = false;
-        _controller.Connect();
+        var next = _client.CreateXbox360Controller();
+        next.AutoSubmitReport = false;
+        try
+        {
+            next.Connect();
+            _controller = next;
+        }
+        catch
+        {
+            (next as IDisposable)?.Dispose();
+            _client.Dispose();
+            _client = null;
+            throw;
+        }
     }
 
     private void Apply(PadReport report)
@@ -314,7 +325,7 @@ internal sealed class GamepadHost : IDisposable
             if (_controller is not null)
             {
                 try { _controller.Disconnect(); } catch (Exception) { }
-                _controller.Dispose();
+                (_controller as IDisposable)?.Dispose();
             }
             _client?.Dispose();
         }
