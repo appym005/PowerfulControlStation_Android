@@ -156,7 +156,10 @@ internal class GamepadTransport(
             } catch (_: Exception) { }
             remote?.let { targets.add(it.address) }
         }
-        targets.forEach { address -> send(message, InetSocketAddress(address, PadProtocol.PORT)) }
+        targets.forEach { address ->
+            try { send(message, InetSocketAddress(address, PadProtocol.PORT)) }
+            catch (_: Exception) { /* Another local interface may still work. */ }
+        }
     }
 
     private fun sendState(address: InetSocketAddress, current: PadState) {
