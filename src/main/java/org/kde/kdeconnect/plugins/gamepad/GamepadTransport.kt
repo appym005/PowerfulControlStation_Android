@@ -36,7 +36,7 @@ internal object PadProtocol {
     fun axis(value: Float): Int = (value.coerceIn(-1f, 1f) * 32767f).toInt().coerceIn(-32768, 32767)
     fun trigger(value: Float): Int = (value.coerceIn(0f, 1f) * 255f).toInt()
     fun body(id: String, sequence: Long, s: PadState): String =
-        "$PREFIX|STATE|$id|$sequence|\${s.buttons}|\${axis(s.lx)}|\${axis(s.ly)}|\${axis(s.rx)}|\${axis(s.ry)}|\${trigger(s.lt)}|\${trigger(s.rt)}"
+        "$PREFIX|STATE|$id|$sequence|${s.buttons}|${axis(s.lx)}|${axis(s.ly)}|${axis(s.rx)}|${axis(s.ry)}|${trigger(s.lt)}|${trigger(s.rt)}"
     fun signature(body: String, secret: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(Base64.getUrlDecoder().decode(secret), "HmacSHA256"))
@@ -97,19 +97,19 @@ internal class GamepadTransport(
                     if (parts.size < 3 || parts[0] != PadProtocol.PREFIX) continue
                     val sender = InetSocketAddress(packet.address, PadProtocol.PORT)
                     when (parts[1]) {
-                        "OFFER" -> announce("Approve \${parts[2]} on Windows to pair")
+                        "OFFER" -> announce("Approve ${parts[2]} on Windows to pair")
                         "PAIRED" -> if (parts.size == 4 && validSecret(parts[3])) {
                             secret = parts[3]
                             prefs.edit().putString("pair_token", secret).apply()
                             remote = sender
                             lastResponse = SystemClock.elapsedRealtime()
-                            announce("Paired with \${parts[2]}")
+                            announce("Paired with ${parts[2]}")
                         }
                         "READY" -> if (parts.size == 4 && secret.isNotEmpty() &&
-                            PadProtocol.signature("\${PadProtocol.PREFIX}|READY|\${parts[2]}", secret) == parts[3]) {
+                            PadProtocol.signature("${PadProtocol.PREFIX}|READY|${parts[2]}", secret) == parts[3]) {
                             remote = sender
                             lastResponse = SystemClock.elapsedRealtime()
-                            announce("Connected: \${parts[2]} • Xbox controller")
+                            announce("Connected: ${parts[2]} • Xbox controller")
                         }
                         "ERROR" -> announce(parts.drop(2).joinToString("|").take(140))
                     }
@@ -134,7 +134,7 @@ internal class GamepadTransport(
 
     private fun sendHello() {
         val challenge = SystemClock.elapsedRealtime().toString()
-        val body = "\${PadProtocol.PREFIX}|HELLO|$clientId|$challenge"
+        val body = "${PadProtocol.PREFIX}|HELLO|$clientId|$challenge"
         val proof = if (secret.isNotEmpty()) PadProtocol.signature(body, secret) else ""
         val message = "$body|$proof"
         val targets = mutableSetOf<InetAddress>()
@@ -162,7 +162,7 @@ internal class GamepadTransport(
     private fun sendState(address: InetSocketAddress, current: PadState) {
         if (secret.isEmpty()) return
         val body = PadProtocol.body(clientId, ++sequence, current)
-        send("$body|\${PadProtocol.signature(body, secret)}", address)
+        send("$body|${PadProtocol.signature(body, secret)}", address)
     }
 
     private fun send(message: String, address: InetSocketAddress) {
