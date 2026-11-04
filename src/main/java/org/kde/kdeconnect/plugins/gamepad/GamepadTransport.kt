@@ -13,6 +13,7 @@ import java.io.Closeable
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.NetworkInterface
 import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
@@ -142,6 +143,17 @@ internal class GamepadTransport(
             try { targets.add(InetAddress.getByName(manualAddress)) } catch (_: Exception) { }
         } else {
             targets.add(InetAddress.getByName("255.255.255.255"))
+            // Include hotspot/tethering subnet broadcasts even when cellular is the default route.
+            try {
+                val interfaces = NetworkInterface.getNetworkInterfaces()
+                while (interfaces != null && interfaces.hasMoreElements()) {
+                    val nic = interfaces.nextElement()
+                    if (!nic.isUp || nic.isLoopback) continue
+                    nic.interfaceAddresses.forEach { address ->
+                        address.broadcast?.let { targets.add(it) }
+                    }
+                }
+            } catch (_: Exception) { }
             try {
                 val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
                 @Suppress("DEPRECATION")
