@@ -105,7 +105,8 @@ internal class GamepadSurfaceView(
     private val stroke = Color.rgb(76, 92, 116)
     private val bright = Color.rgb(58, 117, 193)
 
-    private fun radius(): Float = height * 0.125f
+    private fun unit(): Float = min(height.toFloat(), width / 2.15f)
+    private fun radius(): Float = unit() * 0.125f
     private fun atX(x: Float): Float = width * x
     private fun atY(y: Float): Float = height * y
     private fun distance(x: Float, y: Float, nx: Float, ny: Float) =
@@ -128,21 +129,21 @@ internal class GamepadSurfaceView(
 
     private fun face(c: Canvas, key: String, text: String, x: Float, y: Float, tint: Int, mask: Int) {
         val selected = state.buttons and mask != 0
-        val r = height * .073f
+        val r = unit() * .073f
         disk(c, atX(x), atY(y), r, if (selected) tint else body)
         paint.color = tint
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = height * .008f
+        paint.strokeWidth = unit() * .008f
         c.drawCircle(atX(x), atY(y), r, paint)
         paint.style = Paint.Style.FILL
-        label(c, text, atX(x), atY(y), height * .073f, if (selected) Color.WHITE else tint)
+        label(c, text, atX(x), atY(y), unit() * .073f, if (selected) Color.WHITE else tint)
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
         canvas.drawColor(Color.rgb(13, 19, 31))
-        val h = height.toFloat()
+        val h = unit()
         color(muted)
         paint.textAlign = Paint.Align.LEFT
         paint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -194,14 +195,14 @@ internal class GamepadSurfaceView(
         drawSmall(canvas, "VIEW", .44f, .48f, 0x0020)
         drawSmall(canvas, "MENU", .57f, .48f, 0x0010)
         drawSmall(canvas, "XBOX", .50f, .20f, 0x0400)
-        label(canvas, "L3", atX(.19f), atY(.77f), h * .031f, muted)
-        label(canvas, "R3", atX(.64f), atY(.96f), h * .031f, muted)
+        drawSmall(canvas, "L3", .19f, .85f, 0x0040)
+        drawSmall(canvas, "R3", .64f, .98f, 0x0080)
     }
 
     private fun drawSmall(c: Canvas, text: String, x: Float, y: Float, flag: Int) {
-        round(c, atX(x), atY(y), height * .18f, height * .072f,
+        round(c, atX(x), atY(y), unit() * .18f, unit() * .072f,
             if (state.buttons and flag != 0) bright else body)
-        label(c, text, atX(x), atY(y), height * .030f)
+        label(c, text, atX(x), atY(y), unit() * .030f)
     }
 
     private fun drawStick(c: Canvas, nx: Float, ny: Float, vx: Float, vy: Float, name: String) {
@@ -210,7 +211,7 @@ internal class GamepadSurfaceView(
         val cy = atY(ny)
         disk(c, cx, cy, r, Color.rgb(24, 33, 48))
         paint.color = stroke; paint.style = Paint.Style.STROKE
-        paint.strokeWidth = height * .013f
+        paint.strokeWidth = unit() * .013f
         c.drawCircle(cx, cy, r, paint)
         paint.style = Paint.Style.FILL
         disk(c, cx + vx * r * .65f, cy - vy * r * .65f, r * .58f,
@@ -219,7 +220,7 @@ internal class GamepadSurfaceView(
     }
 
     private fun hit(x: Float, y: Float): String? {
-        val h = height.toFloat()
+        val h = unit()
         if (y < atY(.105f)) return "settings"
         listOf(Triple("lt", .20f, .17f), Triple("lb", .20f, .285f),
             Triple("rt", .80f, .17f), Triple("rb", .80f, .285f)).forEach { (id, nx, ny) ->
@@ -228,6 +229,8 @@ internal class GamepadSurfaceView(
         val faces = listOf("y" to Pair(.83f, .45f), "x" to Pair(.765f, .57f),
             "b" to Pair(.895f, .57f), "a" to Pair(.83f, .69f))
         for ((name, pos) in faces) if (distance(x, y, pos.first, pos.second) < h * .091f) return name
+        if (abs(x - atX(.19f)) < h * .11f && abs(y - atY(.85f)) < h * .045f) return "l3"
+        if (abs(x - atX(.64f)) < h * .11f && abs(y - atY(.98f)) < h * .045f) return "r3"
         if (distance(x, y, .19f, .58f) < radius() * 1.35f) return "left"
         if (distance(x, y, .64f, .78f) < radius() * 1.35f) return "right"
         if (distance(x, y, .40f, .76f) < h * .20f) return "dpad"
@@ -260,7 +263,7 @@ internal class GamepadSurfaceView(
                 "right" -> { val p = axis(x, y, .64f, .78f); rx = p.first; ry = p.second }
                 "dpad" -> {
                     val dx = x - atX(.40f); val dy = y - atY(.76f)
-                    val dead = height * .027f
+                    val dead = unit() * .027f
                     if (dx < -dead) flags = flags or 0x0004
                     if (dx > dead) flags = flags or 0x0008
                     if (dy < -dead) flags = flags or 0x0001
@@ -277,6 +280,8 @@ internal class GamepadSurfaceView(
                 "view" -> flags = flags or 0x0020
                 "menu" -> flags = flags or 0x0010
                 "guide" -> flags = flags or 0x0400
+                "l3" -> flags = flags or 0x0040
+                "r3" -> flags = flags or 0x0080
             }
         }
         state = PadState(flags, lx, ly, rx, ry, lt, rt)
