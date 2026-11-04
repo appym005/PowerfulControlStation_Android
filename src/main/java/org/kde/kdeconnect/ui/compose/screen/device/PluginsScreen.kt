@@ -121,15 +121,20 @@ private fun PluginButtons(
         // Remote Input, keeping the existing remote and Run Command tiles in place.
         val remoteName = stringResource(R.string.open_mousepad)
         val deckName = stringResource(R.string.control_deck)
+        val gamepadName = stringResource(R.string.gamepad_module)
         val sortedButtons = buttons.toMutableList()
         val deck = sortedButtons.firstOrNull { it.name == deckName }
+        val gamepad = sortedButtons.firstOrNull { it.name == gamepadName }
+        if (gamepad != null) sortedButtons.remove(gamepad)
         if (deck != null) {
             sortedButtons.remove(deck)
             val remoteIndex = sortedButtons.indexOfFirst { it.name == remoteName }
             val rowStart = if (remoteIndex >= 0) {
                 ((remoteIndex / numColumns) + 1) * numColumns
             } else sortedButtons.size
-            sortedButtons.add(rowStart.coerceAtMost(sortedButtons.size), deck)
+            val at = rowStart.coerceAtMost(sortedButtons.size)
+            sortedButtons.add(at, deck)
+            if (gamepad != null) sortedButtons.add(at + 1, gamepad)
         }
         val buttonIter = sortedButtons.iterator()
 
