@@ -196,7 +196,7 @@ internal class GamepadSurfaceView(
         drawSmall(canvas, "MENU", .57f, .48f, 0x0010)
         drawSmall(canvas, "XBOX", .50f, .20f, 0x0400)
         drawSmall(canvas, "L3", .19f, .85f, 0x0040)
-        drawSmall(canvas, "R3", .64f, .98f, 0x0080)
+        drawSmall(canvas, "R3", .64f, .94f, 0x0080)
     }
 
     private fun drawSmall(c: Canvas, text: String, x: Float, y: Float, flag: Int) {
@@ -230,7 +230,7 @@ internal class GamepadSurfaceView(
             "b" to Pair(.895f, .57f), "a" to Pair(.83f, .69f))
         for ((name, pos) in faces) if (distance(x, y, pos.first, pos.second) < h * .091f) return name
         if (abs(x - atX(.19f)) < h * .11f && abs(y - atY(.85f)) < h * .045f) return "l3"
-        if (abs(x - atX(.64f)) < h * .11f && abs(y - atY(.98f)) < h * .045f) return "r3"
+        if (abs(x - atX(.64f)) < h * .11f && abs(y - atY(.94f)) < h * .045f) return "r3"
         if (distance(x, y, .19f, .58f) < radius() * 1.35f) return "left"
         if (distance(x, y, .64f, .78f) < radius() * 1.35f) return "right"
         if (distance(x, y, .40f, .76f) < h * .20f) return "dpad"
@@ -269,8 +269,8 @@ internal class GamepadSurfaceView(
                     if (dy < -dead) flags = flags or 0x0001
                     if (dy > dead) flags = flags or 0x0002
                 }
-                "lt" -> lt = 1f
-                "rt" -> rt = 1f
+                "lt" -> lt = (1f - ((y - atY(.17f)) / (unit() * .40f))).coerceIn(0f, 1f)
+                "rt" -> rt = (1f - ((y - atY(.17f)) / (unit() * .40f))).coerceIn(0f, 1f)
                 "lb" -> flags = flags or 0x0100
                 "rb" -> flags = flags or 0x0200
                 "a" -> flags = flags or 0x1000
