@@ -13,6 +13,7 @@ import androidx.preference.PreferenceManager
 import org.kde.kdeconnect.DeviceType
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
+import org.kde.kdeconnect.plugins.gamepad.GamepadActivity
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
 import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect_tp.R
@@ -63,7 +64,15 @@ class MousePadPlugin : Plugin() {
                 intent.putExtra(ControlDeckActivity.EXTRA_DEVICE_ID, device.deviceId)
                 parentActivity.startActivity(intent)
             }
-            listOf(mouseAndKeyboardInput, deck)
+            val gamepad = PluginUiButton(
+                context.getString(R.string.gamepad_module),
+                R.drawable.gamepad_module
+            ) { parentActivity ->
+                val intent = Intent(parentActivity, GamepadActivity::class.java)
+                intent.putExtra(GamepadActivity.EXTRA_DEVICE_ID, device.deviceId)
+                parentActivity.startActivity(intent)
+            }
+            listOf(mouseAndKeyboardInput, deck, gamepad)
         }
     }
 
