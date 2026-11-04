@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: pcs-android-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -27,7 +31,7 @@ jobs:
         run: sdkmanager "platforms;android-37.0"
       - uses: gradle/actions/setup-gradle@v4
       - name: Test swipe keyboard text delta
-        run: bash ./gradlew testDebugUnitTest --tests "org.kde.kdeconnect.plugins.mousepad.CommittedTextDeltaTest" --stacktrace
+        run: bash ./gradlew testDebugUnitTest --tests "org.kde.kdeconnect.plugins.mousepad.CommittedTextDeltaTest" --tests "org.kde.kdeconnect.plugins.gamepad.PadProtocolTest" --stacktrace
       - name: Build debug APK
         run: bash ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
